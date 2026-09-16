@@ -1051,4 +1051,138 @@ Live Map / Landmark Decision
 
 별도의 학습 데이터나 GPU 기반 모델 학습 과정은 필요하지 않습니다.
 
+# 27. 단면도
+
+본 프로젝트의 월드 좌표계는 `Z`축을 높이 방향으로 사용합니다.
+
+```text
++Z : 바닥 → 천장
+-Z : 천장 → 바닥
+```
+
+아래 단면도는 마커 설치 높이와 방향을 이해하기 위한 **개략도이며 실제 축척과는 다를 수 있습니다.**
+
+---
+
+## X-Z 단면도
+
+평면도의 X축 방향으로 공간을 잘라서 본 단면입니다.
+
+```mermaid
+flowchart TB
+    CEILING["천장 / +Z"]
+
+    P03["P03<br/>z = 1800 mm"]
+    P05["P05<br/>z = 1800 mm"]
+    P11["P11<br/>z = 1250 mm"]
+    P06["P06<br/>z = 820 mm"]
+    P10["P10<br/>z = 163 mm"]
+
+    FLOOR["바닥 / z = 0"]
+
+    CEILING --- P03
+    CEILING --- P05
+    P03 --- P11
+    P05 --- P11
+    P11 --- P06
+    P06 --- P10
+    P10 --- FLOOR
+```
+
+주요 높이:
+
+| Marker | Z 위치 |
+|---|---:|
+| P03 | 1800 mm |
+| P05 | 1800 mm |
+| P12 | 1330 mm |
+| P11 | 1250 mm |
+| P06 | 820 mm |
+| P07 | 180 mm |
+| P10 | 163 mm |
+| P01 / P04 / P08 / P09 | 0 mm |
+
+---
+
+## Y-Z 단면도
+
+Y축 방향에서 공간을 잘라서 본 개략적인 단면입니다.
+
+```mermaid
+flowchart TB
+    C["천장"]
+
+    A["벽 부착 Marker<br/>높이별 설치"]
+    B["카메라 / 사용자 위치"]
+    D["바닥 Marker<br/>z = 0"]
+
+    F["바닥"]
+
+    C --> A
+    A --> B
+    B --> D
+    D --> F
+```
+
+---
+
+## Marker 설치 형태
+
+### 바닥 Marker
+
+```text
+        Camera
+          ↓
+      ┌────────┐
+      │ ArUco  │
+      └────────┘
+──────── Floor ────────
+
+Marker FACE = +Z
+```
+
+바닥에 설치된 마커는 카메라가 위쪽에서 바라보도록 배치됩니다.
+
+---
+
+### 벽 Marker
+
+```text
+Wall
+│
+│  ┌────────┐
+│  │ ArUco  │ → FACE
+│  └────────┘
+│
+│
+└──────────── Floor
+```
+
+벽 마커는 복도 방향으로 `FACE`가 향하도록 설치합니다.
+
+마커의 실제 방향은 `aruco_world_map.py`의 다음 값으로 정의됩니다.
+
+```text
+face_world
+top_world
+```
+
+---
+
+## 위치 추정과 단면 관계
+
+```mermaid
+flowchart LR
+    M["Marker World Position<br/>(x, y, z)"]
+    O["Marker Orientation<br/>FACE / TOP"]
+    P["solvePnP"]
+    C["Camera Position<br/>(x, y, z)"]
+
+    M --> C
+    O --> C
+    P --> C
+```
+
+따라서 마커의 평면 위치 `(x, y)`뿐 아니라 **높이 `z`와 설치 방향도 카메라 위치 계산에 직접 사용됩니다.**
+
 </details>
