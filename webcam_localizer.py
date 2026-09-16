@@ -286,72 +286,29 @@ def put_line(
 
 def draw_location_banner(
     frame,
-    text: str,
+    headline: str,
+    nearest_text: str,
+    z_text: str,
 ):
-    """
-    현재 위치 설명을 라이브 화면에서 크게 강조한다.
-    전체 프레임 폭의 어두운 배경 + 밝은 테두리 + 굵은 글씨를 사용한다.
-    """
+    """최근접 문/거리와 Z를 큰 배너로 표시."""
     h, w = frame.shape[:2]
-
-    top = 100
-    bottom = min(
-        h - 1,
-        178,
-    )
-
+    top = 96
+    bottom = min(h - 1, 226)
     if bottom <= top:
         return
 
     overlay = frame.copy()
+    cv2.rectangle(overlay, (0, top), (w - 1, bottom), (0, 0, 0), -1)
+    cv2.addWeighted(overlay, 0.78, frame, 0.22, 0, frame)
+    cv2.rectangle(frame, (2, top + 2), (w - 3, bottom - 2), (0, 255, 255), 3)
 
-    cv2.rectangle(
-        overlay,
-        (0, top),
-        (w - 1, bottom),
-        (0, 0, 0),
-        -1,
-    )
+    def draw(text, y, scale, color, thickness):
+        cv2.putText(frame, text, (17, y + 3), cv2.FONT_HERSHEY_SIMPLEX, scale, (0,0,0), thickness + 3, cv2.LINE_AA)
+        cv2.putText(frame, text, (14, y), cv2.FONT_HERSHEY_SIMPLEX, scale, color, thickness, cv2.LINE_AA)
 
-    cv2.addWeighted(
-        overlay,
-        0.72,
-        frame,
-        0.28,
-        0,
-        frame,
-    )
-
-    cv2.rectangle(
-        frame,
-        (2, top + 2),
-        (w - 3, bottom - 2),
-        (0, 255, 255),
-        3,
-    )
-
-    # 그림자를 먼저 그려서 작은 노트북 화면에서도 눈에 띄게 한다.
-    cv2.putText(
-        frame,
-        text,
-        (17, top + 52),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        1.05,
-        (0, 0, 0),
-        5,
-        cv2.LINE_AA,
-    )
-
-    cv2.putText(
-        frame,
-        text,
-        (14, top + 49),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        1.05,
-        (0, 255, 255),
-        3,
-        cv2.LINE_AA,
-    )
+    draw(headline, top + 40, 0.88, (0, 255, 255), 2)
+    draw(nearest_text, top + 78, 0.62, (255, 255, 255), 1)
+    draw(z_text, top + 112, 0.72, (120, 255, 120), 2)
 
 
 def save_frame(
@@ -989,13 +946,25 @@ def main():
                     )
                 else:
                     location_banner_text = (
-                        "등록된 문 랜드마크에서 3m보다 멉니다."
+                        f"가장 가까운 문: {landmark.name}"
                     )
 
-                # 위치 판정 문구를 큰 배너로 표시.
+                nearest_text = (
+                    f"nearest={landmark.name} | "
+                    f"distance={landmark_distance:.0f} mm "
+                    f"({landmark_distance / 1000.0:.2f} m)"
+                )
+
+                z_text = (
+                    f"CURRENT Z = {float(p[2]):.0f} mm"
+                )
+
+                # 주변 판정 여부와 상관없이 최근접 문/거리/Z를 항상 표시.
                 draw_location_banner(
                     frame,
                     location_banner_text,
+                    nearest_text,
+                    z_text,
                 )
 
                 # 상세 좌표/최근접 랜드마크 정보는 작은 글씨로 별도 유지.

@@ -45,6 +45,12 @@ DOOR_LANDMARKS: Dict[str, DoorLandmark] = {
         20306.0,
         6792.0,
     ),
+    "front_door": DoorLandmark(
+        "front_door",
+        "앞문",
+        -3760.0,
+        5752.0,
+    ),
 }
 
 NEAR_LANDMARK_THRESHOLD_MM = 3000.0
@@ -108,8 +114,8 @@ def describe_position(
         )
     else:
         area_text = (
-            "등록된 문 랜드마크에서 "
-            "3 m보다 멀리 있습니다."
+            f"가장 가까운 문은 {landmark.name}이며 "
+            f"약 {distance / 1000.0:.2f} m 떨어져 있습니다."
         )
 
     return (

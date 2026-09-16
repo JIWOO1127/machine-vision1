@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import platform
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -187,6 +188,15 @@ def main():
         ),
     )
 
+    parser.add_argument(
+        "--samples-dir",
+        default=None,
+        help=(
+            "SPACE로 채택한 체스보드 샘플 이미지를 저장할 폴더. "
+            "생략하면 스크립트 폴더/calibration_samples"
+        ),
+    )
+
     args = parser.parse_args()
 
     if args.camera is None:
@@ -212,6 +222,22 @@ def main():
         output_path = Path(
             args.output
         )
+
+    if args.samples_dir is None:
+        samples_dir = (
+            Path(__file__).resolve().parent
+            /
+            "calibration_samples"
+        )
+    else:
+        samples_dir = Path(
+            args.samples_dir
+        )
+
+    samples_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
     board_size = (
         int(args.cols),
@@ -271,6 +297,7 @@ def main():
         f"Square size : {square_mm:.2f} mm"
     )
     print(f"Output      : {output_path}")
+    print(f"Samples dir : {samples_dir}")
     print()
     print("SPACE = 샘플 저장")
     print("C     = 캘리브레이션 계산/저장 (최소 8장)")
@@ -405,9 +432,34 @@ def main():
                         last_corners.copy()
                     )
 
+                    sample_no = len(image_points)
+                    timestamp = datetime.now().strftime(
+                        "%Y%m%d_%H%M%S_%f"
+                    )
+
+                    sample_path = (
+                        samples_dir
+                        /
+                        f"sample_{sample_no:02d}_{timestamp}.png"
+                    )
+
+                    sample_image = frame.copy()
+
+                    cv2.drawChessboardCorners(
+                        sample_image,
+                        board_size,
+                        last_corners,
+                        True,
+                    )
+
+                    cv2.imwrite(
+                        str(sample_path),
+                        sample_image,
+                    )
+
                     print(
-                        f"[SAMPLE] "
-                        f"{len(image_points)}장 저장"
+                        f"[SAMPLE] {sample_no}장 저장 | "
+                        f"{sample_path}"
                     )
                 else:
                     print(
@@ -492,6 +544,10 @@ def main():
                 print("Distortion:")
                 print(dist_coeffs.ravel())
                 print(f"Saved: {output_path}")
+                print(
+                    "파일 존재 확인: "
+                    f"{output_path.exists()}"
+                )
                 print("=" * 72)
 
     finally:
