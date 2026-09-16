@@ -41,7 +41,7 @@ MAP_Y_MAX = 8200.0
 # 직사각형 구조물:
 # (name, x1, y1, x2, y2)
 RECTANGLES = (
-    ("table_1", -940.0, 1962.0, 3620.0, 4280.0),
+    ("table_1", -940.0, 1962.0, 3620.0, 2862.0),  # Y length = 900 mm
     ("water_1", 4832.0, 2282.0, 5610.0, 3710.0),
     ("meeting_1", 5610.0, 1962.0, 11250.0, 7370.0),
     ("meeting_2", 12725.0, 1962.0, 18875.0, 7380.0),
@@ -65,6 +65,14 @@ SIDE_WALL_Y = 6792.0
 
 # 동쪽 끝 세로벽
 EAST_WALL_X = 27660.0
+
+# 앞문: y=6792 상단 벽의 개구부
+# 중심 (-3760, 6792), 폭 2000 mm
+FRONT_DOOR_CENTER_X = -3760.0
+FRONT_DOOR_Y = SIDE_WALL_Y
+FRONT_DOOR_X1 = -4760.0
+FRONT_DOOR_X2 = -2760.0
+
 
 
 class LiveMapRenderer:
@@ -294,9 +302,13 @@ class LiveMapRenderer:
             x_max=MAP_X_MAX,
             openings=[
                 (
+                    FRONT_DOOR_X1,
+                    FRONT_DOOR_X2,
+                ),
+                (
                     SIDE_DOOR_X1,
                     SIDE_DOOR_X2,
-                )
+                ),
             ],
         )
 
@@ -342,6 +354,27 @@ class LiveMapRenderer:
             bottom,
             (20, 20, 20),
             3,
+            cv2.LINE_AA,
+        )
+
+        # 앞문은 y=6792 벽의 빈 구간으로 표시한다.
+        # 다른 문과 동일하게 별도 선을 그리지 않고 라벨만 표시.
+        front_center = self.world_to_pixel(
+            FRONT_DOOR_CENTER_X,
+            FRONT_DOOR_Y,
+        )
+
+        cv2.putText(
+            image,
+            "FRONT",
+            (
+                front_center[0] - 22,
+                front_center[1] - 8,
+            ),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.42,
+            (60, 60, 60),
+            1,
             cv2.LINE_AA,
         )
 

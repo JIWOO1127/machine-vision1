@@ -71,6 +71,7 @@ import argparse
 import csv
 import json
 import math
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
@@ -358,6 +359,8 @@ def draw_preview_status(
     time_sec: float,
     paused: bool,
     playback_speed: float,
+    preview_mode: str = "all",
+    skipped_frames: int = 0,
 ) -> None:
     """
     큰 프레임 번호와 조작 상태를 preview 화면에 표시한다.
@@ -380,7 +383,7 @@ def draw_preview_status(
         ),
         (
             w - 1,
-            126,
+            154,
         ),
         (0, 0, 0),
         -1,
@@ -452,6 +455,25 @@ def draw_preview_status(
         0.68,
         state_color,
         2,
+        cv2.LINE_AA,
+    )
+
+    mode_text = (
+        f"mode={preview_mode.upper()}  "
+        f"skipped={skipped_frames}"
+    )
+
+    cv2.putText(
+        frame,
+        mode_text,
+        (
+            w - panel_w + 12,
+            130,
+        ),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.48,
+        (255, 255, 255),
+        1,
         cv2.LINE_AA,
     )
 
@@ -635,6 +657,28 @@ def main():
         help=(
             "미리보기 시작 재생속도. "
             "기본 1.0배"
+        ),
+    )
+
+    parser.add_argument(
+        "--preview-fast",
+        action="store_true",
+        help=(
+            "ALL 모드에서 원본 FPS 대기 없이 "
+            "분석 가능한 최대 속도로 preview"
+        ),
+    )
+
+    parser.add_argument(
+        "--preview-mode",
+        choices=[
+            "all",
+            "realtime",
+        ],
+        default="all",
+        help=(
+            "all: 모든 프레임 분석, "
+            "realtime: 재생시간을 맞추기 위해 필요 시 프레임 건너뜀"
         ),
     )
 
@@ -856,6 +900,7 @@ def main():
         )
 
     total_frames = 0
+    skipped_frames_realtime = 0
     frames_with_any_aruco = 0
     frames_with_registered = 0
     frames_with_fused_pose = 0
@@ -914,6 +959,10 @@ def main():
 
                 if not ok or frame is None:
                     break
+
+                # 이 프레임의 실제 처리 시간을 측정해서
+                # preview 대기시간에서 빼준다.
+                frame_process_started = time.perf_counter()
 
                 total_frames += 1
 
@@ -1317,7 +1366,7 @@ def main():
                             display.shape[1],
                             1000,
                         ),
-                        125,
+                        154,
                     ),
                     (0, 0, 0),
                     -1,
@@ -1402,6 +1451,22 @@ def main():
                             255,
                             255,
                         ),
+                        2,
+                    )
+
+                if p_fused is not None:
+                    put_text(
+                        display,
+                        (
+                            f"nearest={nearest_landmark.name} "
+                            f"distance={nearest_distance:.0f}mm "
+                            f"({nearest_distance/1000.0:.2f}m) "
+                            f"Z={p_fused[2]:.0f}mm"
+                        ),
+                        12,
+                        136,
+                        0.54,
+                        (0, 255, 255),
                         2,
                     )
 
@@ -1493,6 +1558,8 @@ def main():
                         time_sec=time_sec,
                         paused=paused,
                         playback_speed=playback_speed,
+                        preview_mode=args.preview_mode,
+                        skipped_frames=skipped_frames_realtime,
                     )
 
                     preview_frame = (
@@ -1507,40 +1574,69 @@ def main():
                         preview_frame,
                     )
 
-                    # 실제 영상 FPS에 가깝게 재생하되
-                    # 사용자가 speed를 바꿀 수 있게 한다.
-                    base_delay_ms = max(
-                        1,
-                        int(
-                            round(
-                                1000.0
-                                /
-                                max(fps, 1.0)
-                            )
-                        ),
+                    # 원본 영상의 프레임 간격에서 실제 분석 시간을 빼고
+                    # 남은 시간만 기다린다.
+                    # 예: 30fps = 33.3ms/frame, 분석 20ms이면 약 13ms만 대기.
+                    target_frame_ms = (
+                        1000.0
+                        /
+                        max(fps, 1.0)
+                        /
+                        max(
+                            playback_speed,
+                            0.125,
+                        )
                     )
 
                     proceed_to_next_frame = (
                         not paused
                     )
+                    manual_step_requested = False
 
                     while True:
                         if paused:
                             wait_ms = 0
                         else:
-                            wait_ms = max(
-                                1,
-                                int(
-                                    round(
-                                        base_delay_ms
-                                        /
-                                        max(
-                                            playback_speed,
-                                            0.125,
-                                        )
-                                    )
-                                ),
+                            # 재생속도가 조작키로 바뀔 수 있으므로
+                            # 매 반복마다 목표 프레임 간격을 다시 계산한다.
+                            target_frame_ms = (
+                                1000.0
+                                /
+                                max(fps, 1.0)
+                                /
+                                max(
+                                    playback_speed,
+                                    0.125,
+                                )
                             )
+
+                            processing_ms = (
+                                time.perf_counter()
+                                -
+                                frame_process_started
+                            ) * 1000.0
+
+                            remaining_ms = (
+                                target_frame_ms
+                                -
+                                processing_ms
+                            )
+
+                            # preview-fast는 ALL 모드에서만 적용.
+                            if (
+                                args.preview_mode == "all"
+                                and args.preview_fast
+                            ):
+                                wait_ms = 1
+                            else:
+                                wait_ms = max(
+                                    1,
+                                    int(
+                                        round(
+                                            remaining_ms
+                                        )
+                                    ),
+                                )
 
                         key_full = cv2.waitKeyEx(
                             wait_ms
@@ -1549,6 +1645,10 @@ def main():
                         if key_full < 0:
                             # 재생 중 timeout이면 다음 프레임.
                             if not paused:
+                                # 일시정지 시간은 realtime skip 계산에서 제외.
+                                frame_process_started = (
+                                    time.perf_counter()
+                                )
                                 proceed_to_next_frame = True
                                 break
 
@@ -1611,6 +1711,7 @@ def main():
                             ord("."),
                         ):
                             paused = True
+                            manual_step_requested = True
                             proceed_to_next_frame = True
                             break
 
@@ -1710,7 +1811,89 @@ def main():
                     if not proceed_to_next_frame:
                         continue
 
-                frame_index += 1
+                    # ------------------------------------------------
+                    # REALTIME 모드:
+                    # 분석 시간이 원본 프레임 간격보다 길면
+                    # source frame을 grab()으로 건너뛰어
+                    # 실제 재생시간에 최대한 맞춘다.
+                    #
+                    # 건너뛴 프레임은 분석/CSV 기록하지 않는다.
+                    # ------------------------------------------------
+                    frames_to_skip = 0
+
+                    if (
+                        args.preview_mode == "realtime"
+                        and not paused
+                        and not manual_step_requested
+                    ):
+                        target_frame_ms = (
+                            1000.0
+                            /
+                            max(fps, 1.0)
+                            /
+                            max(
+                                playback_speed,
+                                0.125,
+                            )
+                        )
+
+                        elapsed_ms = (
+                            time.perf_counter()
+                            -
+                            frame_process_started
+                        ) * 1000.0
+
+                        # 현재 처리한 프레임 자체가 한 구간을 차지하므로
+                        # 추가로 지나간 구간만큼만 skip.
+                        frames_to_skip = max(
+                            0,
+                            int(
+                                elapsed_ms
+                                //
+                                max(
+                                    target_frame_ms,
+                                    1.0,
+                                )
+                            )
+                            -
+                            1,
+                        )
+
+                        # 비정상적으로 큰 점프 방지
+                        frames_to_skip = min(
+                            frames_to_skip,
+                            300,
+                        )
+
+                    actual_skipped = 0
+
+                    for _ in range(
+                        frames_to_skip
+                    ):
+                        if not cap.grab():
+                            break
+
+                        actual_skipped += 1
+
+                    skipped_frames_realtime += (
+                        actual_skipped
+                    )
+
+                    if actual_skipped > 0:
+                        print(
+                            f"[REALTIME] "
+                            f"frame {frame_index}: "
+                            f"skip {actual_skipped} frame(s)"
+                        )
+
+                    frame_index += (
+                        1
+                        +
+                        actual_skipped
+                    )
+
+                else:
+                    frame_index += 1
 
         except KeyboardInterrupt:
             print(
@@ -1785,6 +1968,29 @@ def main():
             "processed_frames": (
                 total_frames
             ),
+            "skipped_frames_realtime": (
+                skipped_frames_realtime
+            ),
+            "source_frames_advanced": (
+                total_frames
+                +
+                skipped_frames_realtime
+            ),
+            "analysis_fraction_of_advanced_frames": (
+                total_frames
+                /
+                (
+                    total_frames
+                    +
+                    skipped_frames_realtime
+                )
+                if (
+                    total_frames
+                    +
+                    skipped_frames_realtime
+                )
+                else 0.0
+            ),
         },
         "settings": {
             "outlier_threshold_mm": (
@@ -1795,6 +2001,12 @@ def main():
             ),
             "reset_after_missing_frames": (
                 args.reset_after_missing
+            ),
+            "preview_mode": (
+                args.preview_mode
+            ),
+            "preview_fast": (
+                bool(args.preview_fast)
             ),
         },
         "coverage": {
@@ -1891,6 +2103,12 @@ def main():
     print("=" * 72)
     print(f"Input       : {video_path}")
     print(f"Frames      : {total_frames}")
+    print(
+        f"Preview mode: {args.preview_mode}"
+    )
+    print(
+        f"Skipped     : {skipped_frames_realtime}"
+    )
     print(
         f"Pose frames : "
         f"{frames_with_fused_pose} "
