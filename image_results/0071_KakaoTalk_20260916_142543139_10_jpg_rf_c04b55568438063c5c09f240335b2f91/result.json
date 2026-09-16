@@ -1,0 +1,30 @@
+{
+  "input_image": "C:\\Users\\한국전파진흥협회\\OneDrive\\바탕 화면\\aaa\\KakaoTalk_20260916_142543139_10_jpg.rf.c04b55568438063c5c09f240335b2f91.jpg",
+  "image_size": {
+    "width": 512,
+    "height": 512
+  },
+  "dictionary": "DICT_4X4_50",
+  "camera_model": {
+    "mode": "APPROX_HFOV_60.0",
+    "calibration_file": null,
+    "approx_hfov_deg": 60.0,
+    "resolution_warning": null
+  },
+  "detected_ids": [],
+  "registered_ids": [],
+  "individual_estimates": [],
+  "best_single": null,
+  "fused": null,
+  "location": {
+    "text_ko": "유효한 등록 ArUco Pose가 없습니다.",
+    "nearest_landmark": null,
+    "nearest_landmark_distance_mm": null,
+    "description": null
+  },
+  "outputs": {
+    "annotated_image": "C:\\Users\\한국전파진흥협회\\OneDrive\\바탕 화면\\git p11\\machine-vision1\\image_results\\0071_KakaoTalk_20260916_142543139_10_jpg_rf_c04b55568438063c5c09f240335b2f91\\annotated.png",
+    "map_image": "C:\\Users\\한국전파진흥협회\\OneDrive\\바탕 화면\\git p11\\machine-vision1\\image_results\\0071_KakaoTalk_20260916_142543139_10_jpg_rf_c04b55568438063c5c09f240335b2f91\\map.png",
+    "result_json": "C:\\Users\\한국전파진흥협회\\OneDrive\\바탕 화면\\git p11\\machine-vision1\\image_results\\0071_KakaoTalk_20260916_142543139_10_jpg_rf_c04b55568438063c5c09f240335b2f91\\result.json"
+  }
+}

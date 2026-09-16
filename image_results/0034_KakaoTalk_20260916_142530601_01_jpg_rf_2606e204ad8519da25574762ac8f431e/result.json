@@ -1,0 +1,69 @@
+{
+  "input_image": "C:\\Users\\한국전파진흥협회\\OneDrive\\바탕 화면\\aaa\\KakaoTalk_20260916_142530601_01_jpg.rf.2606e204ad8519da25574762ac8f431e.jpg",
+  "image_size": {
+    "width": 512,
+    "height": 512
+  },
+  "dictionary": "DICT_4X4_50",
+  "camera_model": {
+    "mode": "APPROX_HFOV_60.0",
+    "calibration_file": null,
+    "approx_hfov_deg": 60.0,
+    "resolution_warning": null
+  },
+  "detected_ids": [
+    4
+  ],
+  "registered_ids": [
+    4
+  ],
+  "individual_estimates": [
+    {
+      "point_name": "P07",
+      "marker_id": 4,
+      "position_world_mm": [
+        23263.53458031793,
+        673.3794845725366,
+        457.2375650221385
+      ],
+      "reprojection_error_px": 0.17431658219034932,
+      "marker_area_px2": 112.71068998426199,
+      "weight": 1803.3710397481918
+    }
+  ],
+  "best_single": {
+    "point_name": "P07",
+    "marker_id": 4,
+    "position_world_mm": [
+      23263.53458031793,
+      673.3794845725366,
+      457.2375650221385
+    ],
+    "reprojection_error_px": 0.17431658219034932,
+    "weight": 1803.3710397481918
+  },
+  "fused": {
+    "position_world_mm": [
+      23263.53458031793,
+      673.3794845725366,
+      457.2375650221385
+    ],
+    "yaw_deg": -148.93564827669496,
+    "spread_mm": 0.0,
+    "used_marker_ids": [
+      4
+    ],
+    "rejected_marker_ids": []
+  },
+  "location": {
+    "text_ko": "가장 가까운 문은 2번강의실이며 약 3.69 m 떨어져 있습니다.",
+    "nearest_landmark": "2번강의실",
+    "nearest_landmark_distance_mm": 3685.5722466128664,
+    "description": "WORLD: x=23264 mm, y=673 mm, z=457 mm | 가장 가까운 문은 2번강의실이며 약 3.69 m 떨어져 있습니다. nearest=2번강의실, distance=3686 mm, dx=+3624, dy=+673"
+  },
+  "outputs": {
+    "annotated_image": "C:\\Users\\한국전파진흥협회\\OneDrive\\바탕 화면\\git p11\\machine-vision1\\image_results\\0034_KakaoTalk_20260916_142530601_01_jpg_rf_2606e204ad8519da25574762ac8f431e\\annotated.png",
+    "map_image": "C:\\Users\\한국전파진흥협회\\OneDrive\\바탕 화면\\git p11\\machine-vision1\\image_results\\0034_KakaoTalk_20260916_142530601_01_jpg_rf_2606e204ad8519da25574762ac8f431e\\map.png",
+    "result_json": "C:\\Users\\한국전파진흥협회\\OneDrive\\바탕 화면\\git p11\\machine-vision1\\image_results\\0034_KakaoTalk_20260916_142530601_01_jpg_rf_2606e204ad8519da25574762ac8f431e\\result.json"
+  }
+}

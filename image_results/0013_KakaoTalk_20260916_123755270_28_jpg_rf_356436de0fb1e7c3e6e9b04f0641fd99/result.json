@@ -1,0 +1,84 @@
+{
+  "input_image": "C:\\Users\\한국전파진흥협회\\OneDrive\\바탕 화면\\aaa\\KakaoTalk_20260916_123755270_28_jpg.rf.356436de0fb1e7c3e6e9b04f0641fd99.jpg",
+  "image_size": {
+    "width": 512,
+    "height": 512
+  },
+  "dictionary": "DICT_4X4_50",
+  "camera_model": {
+    "mode": "APPROX_HFOV_60.0",
+    "calibration_file": null,
+    "approx_hfov_deg": 60.0,
+    "resolution_warning": null
+  },
+  "detected_ids": [
+    17,
+    5
+  ],
+  "registered_ids": [
+    17,
+    5
+  ],
+  "individual_estimates": [
+    {
+      "point_name": "P06",
+      "marker_id": 17,
+      "position_world_mm": [
+        18678.14553473392,
+        849.2908855425567,
+        1398.4584486200279
+      ],
+      "reprojection_error_px": 0.28516632011773063,
+      "marker_area_px2": 167.02234529447742,
+      "weight": 2053.894419461067
+    },
+    {
+      "point_name": "P09",
+      "marker_id": 5,
+      "position_world_mm": [
+        19013.03486429966,
+        -7.87598462535243,
+        2220.55762390541
+      ],
+      "reprojection_error_px": 0.485102244675871,
+      "marker_area_px2": 99.21829825360328,
+      "weight": 421.6238848440271
+    }
+  ],
+  "best_single": {
+    "point_name": "P06",
+    "marker_id": 17,
+    "position_world_mm": [
+      18678.14553473392,
+      849.2908855425567,
+      1398.4584486200279
+    ],
+    "reprojection_error_px": 0.28516632011773063,
+    "weight": 2053.894419461067
+  },
+  "fused": {
+    "position_world_mm": [
+      18735.18302053185,
+      703.30043775177,
+      1538.4762571767667
+    ],
+    "yaw_deg": 43.587850594979294,
+    "spread_mm": 1023.8205612648677,
+    "used_marker_ids": [
+      17,
+      5
+    ],
+    "rejected_marker_ids": []
+  },
+  "location": {
+    "text_ko": "2번강의실 주변입니다.",
+    "nearest_landmark": "2번강의실",
+    "nearest_landmark_distance_mm": 1146.0040454011041,
+    "description": "WORLD: x=18735 mm, y=703 mm, z=1538 mm | 2번강의실 주변입니다. nearest=2번강의실, distance=1146 mm, dx=-905, dy=+703"
+  },
+  "outputs": {
+    "annotated_image": "C:\\Users\\한국전파진흥협회\\OneDrive\\바탕 화면\\git p11\\machine-vision1\\image_results\\0013_KakaoTalk_20260916_123755270_28_jpg_rf_356436de0fb1e7c3e6e9b04f0641fd99\\annotated.png",
+    "map_image": "C:\\Users\\한국전파진흥협회\\OneDrive\\바탕 화면\\git p11\\machine-vision1\\image_results\\0013_KakaoTalk_20260916_123755270_28_jpg_rf_356436de0fb1e7c3e6e9b04f0641fd99\\map.png",
+    "result_json": "C:\\Users\\한국전파진흥협회\\OneDrive\\바탕 화면\\git p11\\machine-vision1\\image_results\\0013_KakaoTalk_20260916_123755270_28_jpg_rf_356436de0fb1e7c3e6e9b04f0641fd99\\result.json"
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "input_image": "C:\\Users\\한국전파진흥협회\\OneDrive\\바탕 화면\\aaa\\KakaoTalk_20260916_142530601_11_jpg.rf.bbe3a975b4b790ed43a301b20b75f1ba.jpg",
+  "image_size": {
+    "width": 512,
+    "height": 512
+  },
+  "dictionary": "DICT_4X4_50",
+  "camera_model": {
+    "mode": "APPROX_HFOV_60.0",
+    "calibration_file": null,
+    "approx_hfov_deg": 60.0,
+    "resolution_warning": null
+  },
+  "detected_ids": [
+    4
+  ],
+  "registered_ids": [
+    4
+  ],
+  "individual_estimates": [
+    {
+      "point_name": "P07",
+      "marker_id": 4,
+      "position_world_mm": [
+        18628.72038278527,
+        2086.4738776927406,
+        328.12319836876577
+      ],
+      "reprojection_error_px": 0.3413608939333874,
+      "marker_area_px2": 360.1975370980799,
+      "weight": 3091.101064124807
+    }
+  ],
+  "best_single": {
+    "point_name": "P07",
+    "marker_id": 4,
+    "position_world_mm": [
+      18628.72038278527,
+      2086.4738776927406,
+      328.12319836876577
+    ],
+    "reprojection_error_px": 0.3413608939333874,
+    "weight": 3091.101064124807
+  },
+  "fused": {
+    "position_world_mm": [
+      18628.72038278527,
+      2086.4738776927406,
+      328.12319836876577
+    ],
+    "yaw_deg": -51.85681024383892,
+    "spread_mm": 0.0,
+    "used_marker_ids": [
+      4
+    ],
+    "rejected_marker_ids": []
+  },
+  "location": {
+    "text_ko": "2번강의실 주변입니다.",
+    "nearest_landmark": "2번강의실",
+    "nearest_landmark_distance_mm": 2318.633154789293,
+    "description": "WORLD: x=18629 mm, y=2086 mm, z=328 mm | 2번강의실 주변입니다. nearest=2번강의실, distance=2319 mm, dx=-1011, dy=+2086"
+  },
+  "outputs": {
+    "annotated_image": "C:\\Users\\한국전파진흥협회\\OneDrive\\바탕 화면\\git p11\\machine-vision1\\image_results\\0044_KakaoTalk_20260916_142530601_11_jpg_rf_bbe3a975b4b790ed43a301b20b75f1ba\\annotated.png",
+    "map_image": "C:\\Users\\한국전파진흥협회\\OneDrive\\바탕 화면\\git p11\\machine-vision1\\image_results\\0044_KakaoTalk_20260916_142530601_11_jpg_rf_bbe3a975b4b790ed43a301b20b75f1ba\\map.png",
+    "result_json": "C:\\Users\\한국전파진흥협회\\OneDrive\\바탕 화면\\git p11\\machine-vision1\\image_results\\0044_KakaoTalk_20260916_142530601_11_jpg_rf_bbe3a975b4b790ed43a301b20b75f1ba\\result.json"
+  }
+}
