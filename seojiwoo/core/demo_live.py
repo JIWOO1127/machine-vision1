@@ -14,12 +14,13 @@ from PIL import Image, ImageDraw, ImageFont
 from locator import Locator
 
 ap = argparse.ArgumentParser()
-ap.add_argument('--weights', required=True)
+ap.add_argument('--weights', required=True, help='주 모델 (표지판·문): 5클래스 v1 권장')
+ap.add_argument('--logo_weights', default=None, help='로고 전용 모델 (6클래스 final_best.pt)')
 ap.add_argument('--source', required=True, help='파일 경로 / 스트림 URL / 카메라 번호')
 ap.add_argument('--stride', type=int, default=6, help='N프레임마다 1회 추론 (30fps 영상, 6 → 5회/초)')
 ap.add_argument('--window', type=int, default=5)
 ap.add_argument('--min_votes', type=int, default=4)
-ap.add_argument('--sign_conf', type=float, default=0.65)
+ap.add_argument('--sign_conf', type=float, default=0.35, help='표지판 conf (OCR 검증과 함께 쓰므로 낮게)')
 ap.add_argument('--no_approach', action='store_true', help='접근 추세 조건 끄기')
 ap.add_argument('--route', nargs='*', default=None, help='동선 순서, 예: front_door 4_class 2_class rear_door')
 ap.add_argument('--near_m', type=float, default=3.0)
@@ -38,7 +39,7 @@ args = ap.parse_args()
 verifier = None
 if args.ocr:
     from ocr_verify import OcrVerifier; verifier = OcrVerifier(gpu=(args.device != 'cpu'))
-loc = Locator(args.weights, verifier=verifier, merge_signs=(args.merge_signs or args.nav), targets=('2_class','4_class','front_door','rear_door','logo'), f_norm=args.f_norm, near_m=args.near_m, window=args.window, min_votes=args.min_votes,
+loc = Locator(args.weights, logo_weights=args.logo_weights, verifier=verifier, merge_signs=(args.merge_signs or args.nav), targets=('2_class','4_class','front_door','rear_door','logo'), f_norm=args.f_norm, near_m=args.near_m, window=args.window, min_votes=args.min_votes,
               conf=args.conf, sign_conf=args.sign_conf, approach_only=not args.no_approach, route=args.route, device=args.device)
 nav = None
 if args.nav:

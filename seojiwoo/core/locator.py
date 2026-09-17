@@ -22,7 +22,7 @@ import numpy as np
 from ultralytics import YOLO
 
 REAL_SIZE = {'2_class': (0.20, 0.13), '4_class': (0.20, 0.13), 'front_door': (2.5, 4.4), 'rear_door': (2.1, 1.8),
-             'logo': (1.0, 1.0)}                      # ← 로고 실제 높이/너비(m) 실측 후 수정
+             'logo': (1.00, 1.07)}                    # 실측: 세로 100cm × 가로 107cm
 DISPLAY = {'2_class': '2강의실', '4_class': '4강의실', 'front_door': '앞문', 'rear_door': '뒷문', 'logo': '정면 로고 벽', 'sign': '강의실 표지판'}
 REAL_SIZE['sign'] = REAL_SIZE['2_class']
 SIGNS = {'2_class', '4_class'}
@@ -31,8 +31,11 @@ SIGNS = {'2_class', '4_class'}
 class Locator:
     def __init__(self, weights, f_norm=0.85, near_m=3.0, window=5, min_votes=4, conf=0.5, sign_conf=0.65,
                  approach_only=True, route=None, imgsz=640, device=None, announce_every=5.0, targets=tuple(REAL_SIZE),
-                 verifier=None, merge_signs=False):
+                 verifier=None, merge_signs=False, logo_weights=None):
         self.model = YOLO(str(weights))
+        # logo_weights: 로고 전용 모델(6클래스). 주 모델은 표지판·문, 로고는 이 모델에서만 가져옴
+        #   (6클래스 재학습 시 소객체 표지판 탐지가 무너져 두 모델을 분리)
+        self.logo_model = YOLO(str(logo_weights)) if logo_weights else None
         self.f_norm, self.near_m, self.window, self.min_votes = f_norm, near_m, window, max(1, min(min_votes, window))
         self.conf, self.sign_conf, self.approach_only = conf, sign_conf, approach_only
         self.route, self.route_idx = list(route) if route else None, -1     # -1: 아직 아무 랜드마크도 안 지남
@@ -53,17 +56,24 @@ class Locator:
 
     def detect(self, frame):
         H, W = frame.shape[:2]
-        r = self.model.predict(frame, imgsz=self.imgsz, conf=min(self.conf, self.sign_conf), device=self.device, verbose=False)[0]
+        results = [(self.model, False)] + ([(self.logo_model, True)] if self.logo_model else [])
         dets = []
-        for b, c, s in zip(r.boxes.xyxy.cpu().numpy(), r.boxes.cls.cpu().numpy(), r.boxes.conf.cpu().numpy()):
-            name = r.names[int(c)]
-            if name not in self.targets: continue
-            if float(s) < (self.sign_conf if name in SIGNS else self.conf): continue
+        for model, logo_only in results:
+            r = model.predict(frame, imgsz=self.imgsz, conf=min(self.conf, self.sign_conf), device=self.device, verbose=False)[0]
+            for b, c, s in zip(r.boxes.xyxy.cpu().numpy(), r.boxes.cls.cpu().numpy(), r.boxes.conf.cpu().numpy()):
+                name = r.names[int(c)]
+                if name not in self.targets: continue
+                if self.logo_model and ((name == 'logo') != logo_only): continue   # 로고는 로고 모델에서만
+                dets.append(self._make_det(name, b, s, W, H))
+        return [d for d in dets if d is not None]
+
+    def _make_det(self, name, b, s, W, H):
+        if True:
+            if float(s) < (self.sign_conf if name in SIGNS else self.conf): return None
             x1, y1, x2, y2 = map(float, b)
             yolo_name, name = name, ('sign' if (self.merge_signs and name in SIGNS) else name)
-            dets.append({'name': name, 'yolo_class': yolo_name, 'conf': float(s), 'box': (x1, y1, x2, y2),
-                         'distance_m': self._distance(yolo_name, x1, y1, x2, y2, W, H)})
-        return dets
+            return {'name': name, 'yolo_class': yolo_name, 'conf': float(s), 'box': (x1, y1, x2, y2),
+                    'distance_m': self._distance(yolo_name, x1, y1, x2, y2, W, H)}
 
     def _allowed(self, name):
         """route 가 있으면 현재 또는 다음 랜드마크만 허용"""

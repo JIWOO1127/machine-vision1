@@ -13,12 +13,13 @@ python -m venv .venv
 
 녹화 영상으로 확인:
 ```powershell
-.\.venv\Scripts\python.exe demo_live.py --weights final_best.pt --source ..\..\sample\test.mp4 --device 0 --save
+.\.venv\Scripts\python.exe demo_live.py --weights v1_best.pt --logo_weights final_best.pt --source ..\..\sample\test.mp4 --device 0 --save
 ```
 폰 카메라(DroidCam 가상 웹캠)로:
 ```powershell
-.\.venv\Scripts\python.exe demo_live.py --weights final_best.pt --source 1 --device 0 --nav --ocr --tts
+.\.venv\Scripts\python.exe demo_live.py --weights v1_best.pt --logo_weights final_best.pt --source 1 --device 0 --nav --ocr --tts --save
 ```
+`--weights` 는 표지판·문 탐지용 5클래스(v1_best.pt), `--logo_weights` 는 로고 전용 6클래스(final_best.pt) — 클래스별 탐지기 분리 이유는 아래 "자주 막히는 곳" 참고.
 `--device 0` 은 GPU, 없으면 `--device cpu` (v8n 은 CPU 에서도 20 FPS).
 
 ## 자주 막히는 곳 (오늘 실제로 겪은 것)
@@ -31,6 +32,7 @@ python -m venv .venv
 | 폰 영상 대신 노트북 카메라 | 소스 번호 | `--source 0` ↔ `--source 1` 바꿔보기 |
 | `RuntimeError: freeze_support()` | Windows 멀티프로세스 | 스크립트 본문이 `if __name__ == "__main__":` 안에 있어야 함 (core 는 이미 적용) |
 | 거리가 전부 20~30% 짧거나 김 | 폰마다 화각이 다름 | 아래 "카메라 보정" 1회 |
+| 로고 클래스 추가 재학습 후 표지판 원거리 탐지 4/7→1/7로 급락 | logo 클래스를 합쳐 재학습하면서 표지판(2_class/4_class) 민감도가 떨어짐 | 클래스별 탐지기 분리로 해결: 표지판·문은 5클래스 v1_best.pt, 로고만 6클래스 final_best.pt (`--weights`/`--logo_weights`) |
 
 ## 카메라 보정 (폰 바꾸면 1회)
 
