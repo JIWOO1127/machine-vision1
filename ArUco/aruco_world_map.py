@@ -312,12 +312,12 @@ ARUCO_MARKERS: Tuple[ArucoMarker, ...] = (
         description=(
             "테이블/정수기/벽 블록 쪽 x=19475 세로 경계의 마커. "
             "현장 재확인으로 ID 12, 크기 134 mm로 수정. "
-            "P11 이동 전 브랜치."
+            "P11 이동 후 브랜치."
         ),
         marker_id=12,
         size_mm=134.0,
         x=19475.0,
-        y=5752.0,
+        y=6012.0,
         z=1250.0,
         face_world="+X",
         top_world="-Y",

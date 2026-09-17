@@ -1,93 +1,742 @@
-# ArUco Indoor Localizer
+# ArUco Indoor Localizer & Navigation
+
+> **ArUco fiducial marker + PnP 기반의 비학습식 실내 위치추정 및 길안내 시스템**
+
+> [!NOTE]
+> P11은 이동 전/후 두 버전이 있습니다. Git 브랜치별로 좌표를 고정해 사용합니다.
 
 
-<details open>
-<summary><strong>📌 요약 보기</strong></summary>
+## 한눈에 보기
 
-<br>
+| 구분 | 현재 구현 |
+|---|---|
+| 위치추정 | ArUco + `solvePnP` |
+| 학습 모델 | **사용하지 않음** |
+| 좌표 단위 | mm |
+| 출력 위치 | 카메라 광학 중심의 `X / Y / Z` |
+| 방향 | Camera Yaw |
+| 다중 마커 | 이상치 제거 + 가중 융합 |
+| 위치 안정화 | Median + EMA + 급격한 튐 거부 |
+| 라이브 UI | 웹캠 / 미니맵 / Navigation Control 3개 창 |
+| 네비게이션 경로 | 앞문 → 4번 강의실 → 2번 강의실 → 뒷문 |
+| 경유/도착 판정 | 해당 지점 중심 **2.5m 이내** |
+| 영상/이미지 분석 | Video / Single Image / Batch Images |
+| 결과 저장 | CSV / JSON / MP4 / PNG / HTML |
 
-ArUco 마커와 OpenCV `solvePnP`를 이용해 **실내에서 카메라의 위치 `(x, y, z)`와 방향을 추정하는 비학습식 위치추정 시스템**입니다.
+---
 
-### 핵심 기능
+## 시스템 전체 구조
 
-- 실시간 웹캠 ArUco 검출
-- 마커별 카메라 위치 계산
-- 다중 마커 이상치 제거 + 가중 평균
-- 카메라 Yaw 계산
-- 실시간 XY 미니맵
-- 문/랜드마크 주변 판정
-- 체스보드 카메라 캘리브레이션
-- 캘리브레이션이 없는 영상의 HFOV 근사 모드
-- 녹화 동영상 분석
-- `Best Single / Weighted Fusion / Temporal EMA` 비교
-- CSV / JSON / 결과 영상 저장
-- Ground Truth 기반 MAE / RMSE / P95 평가
+```mermaid
+flowchart LR
+    CAM["Camera / Video / Image"] --> DET["ArUco Detection"]
+    DET --> DB["Marker DB<br/>ID · Size · XYZ · FACE · TOP"]
+    DB --> PNP["solvePnP"]
+    PNP --> TF["Marker → Camera → World Transform"]
+    TF --> POSE["Marker별 Camera Pose"]
 
-### 가장 빠른 실행
+    POSE --> OUT["1500 mm 위치 이상치 제거"]
+    OUT --> FUSE["Weighted Multi-Marker Fusion"]
+    FUSE --> XYZ["Final X · Y · Z"]
+    FUSE --> YAW["Camera Yaw"]
 
-**실시간 위치추정**
+    XYZ --> MAP["XY Minimap"]
+    XYZ --> LAND["Nearest Door / Distance"]
+    XYZ --> STAB["Position Stabilizer"]
+    YAW --> NAV["Navigation Engine"]
+    STAB --> NAV
 
-```powershell
-python webcam_localizer.py --camera 1
+    NAV --> CAMUI["Webcam Direction Card"]
+    NAV --> MAPUI["Route on Minimap"]
+    NAV --> CTRL["Navigation Control"]
 ```
 
-**카메라 목록 확인**
+### 처리 핵심
 
-```powershell
-python webcam_localizer.py --list-cameras
+```text
+ArUco 검출
+→ PnP
+→ 월드 좌표 변환
+→ 다중 마커 융합
+→ 위치 안정화
+→ 현재 위치 / 시선 방향
+→ 미니맵 + 네비게이션
 ```
 
-**카메라 캘리브레이션**
+---
+
+## 현재 UI
+
+![Navigation V7 3-window UI](docs/navigation_v7_ui_overview.png)
+
+| 창 | 목적 | 주요 표시 |
+|---|---|---|
+| **ArUco Indoor Navigation** | 실제 환경 확인 + 방향 안내 | 웹캠, 마커, 시선 기준 방향 카드, 경고 |
+| **Indoor Navigation Map** | 공간/경로 확인 | 전체 경로, 지나온 길, 현재 위치, 경유지 |
+| **Navigation Control** | 조작 + 상태 확인 | 시작/종료, XYZ, 최근접 문, FPS, 처리시간 |
+
+### 방향 아이콘
+
+![Straight direction arrows](docs/navigation_v7_straight_arrow_preview.png)
+
+> 둥근 화살표와 U턴 화살표는 사용하지 않습니다.  
+> 모든 방향은 **직선 화살표**로 표시합니다.
+
+---
+
+# 빠른 실행
+
+| 목적 | 명령 |
+|---|---|
+| 실시간 위치추정 | `python webcam_localizer.py --camera 1` |
+| 실시간 네비게이션 | `python navigation_live.py --camera 1` |
+| 카메라 목록 | `python navigation_live.py --list-cameras` |
+| 카메라 캘리브레이션 | `python calibrate_webcam.py --camera 1` |
+| 영상 분석 | `python video_localizer.py test.mp4 --preview` |
+| 불명 카메라 영상 | `python video_localizer.py test.mp4 --no-calibration --preview` |
+| 단일 이미지 | `python image_localizer.py test.jpg --preview` |
+| 이미지 일괄 판정 | `python batch_image_localizer.py "C:\이미지폴더" --no-calibration` |
+| 결과 비교 | `python compare_localization_results.py test_results\positions.csv` |
+
+필수 패키지:
+
+```powershell
+python -m pip install numpy opencv-contrib-python pillow
+```
+
+---
+
+# 1. 좌표계
+
+모든 좌표는 **mm**입니다.
+
+| 축 | 의미 |
+|---|---|
+| `+X` | 평면도 오른쪽 |
+| `-X` | 평면도 왼쪽 |
+| `+Y` | 평면도 위쪽 |
+| `-Y` | 평면도 아래쪽 |
+| `+Z` | 바닥 → 천장 |
+| `-Z` | 천장 → 바닥 |
+
+```mermaid
+flowchart TB
+    PY["+Y · 평면도 위"]
+    O["XY 원점"]
+    NY["-Y · 평면도 아래"]
+    PX["+X · 오른쪽"]
+    NX["-X · 왼쪽"]
+    PZ["+Z · 천장 방향"]
+
+    PY --- O --- NY
+    NX --- O --- PX
+    PZ --- O
+```
+
+> `X/Y`는 바닥 평면, `Z`는 높이입니다.
+
+---
+
+# 2. 지도 주요 좌표
+
+## 문 / 랜드마크
+
+| 이름 | 중심 좌표 `(x, y)` mm | 비고 |
+|---|---:|---|
+| 앞문 | `(-3760, 6792)` | 상단 벽 개구부 |
+| 4번 강의실 | `(500, 0)` | 하단 벽 |
+| 3번 강의실 | `(10180, 0)` | 하단 벽 |
+| 2번 강의실 | `(19640, 0)` | 하단 벽 |
+| 뒷문 | `(20306, 6792)` | 현재 기존 `쪽문` 좌표 사용 |
+
+## 주요 구조물
+
+| 구조물 | X 범위 mm | Y 범위 mm |
+|---|---:|---:|
+| TABLE1 | `-940 ~ 3620` | `1962 ~ 2862` |
+| 정수기 1 | `4832 ~ 5610` | `2282 ~ 3710` |
+| 회의실 1 | `5610 ~ 11250` | `1962 ~ 7370` |
+| 회의실 2 | `12725 ~ 18875` | `1962 ~ 7380` |
+| TABLE2 | `18875 ~ 19475` | `1962 ~ 4262` |
+| 정수기 2 | `18875 ~ 19475` | `4262 ~ 4902` |
+| 벽 블록 | `18875 ~ 19475` | `4902 ~ 6792` |
+| TABLE3 | `21607 ~ 23707` | `5252 ~ 6125` |
+
+## 벽 개구부
+
+| 벽 | 개구부 |
+|---|---|
+| `y = 0` | 4번 강의실 `x=0~1000`, 3번 `9680~10680`, 2번 `19140~20140` |
+| `y = 6792` | 앞문 `-4760~-2760`, 뒷문/쪽문 `19475~21137` |
+| 동쪽 벽 | `x = 27660` |
+
+---
+
+# 3. ArUco Marker Database
+
+마커 로컬축:
+
+```text
+local +X = RIGHT
+local +Y = TOP
+local +Z = FACE
+
+RIGHT = TOP × FACE
+```
+
+| Point | ID | Size mm | XYZ mm | FACE | TOP |
+|---|---:|---:|---|---|---|
+| P01 | 25 | 134 | `(-3760, 1240, 0)` | `+Z` | `-Y` |
+| P02 | 9 | 34 | `(450, 1962, 800)` | `-Y` | `-Z` |
+| P03 | 13 | 134 | `(1280, 0, 1800)` | `+Y` | `+Z` |
+| P04 | 14 | 134 | `(8930, 740, 0)` | `+Z` | `-Y` |
+| P05 | 15 | 134 | `(10980, 0, 1800)` | `+Y` | `-X` |
+| P06 | 17 | 34 | `(19195, 1962, 820)` | `-Y` | `-Z` |
+| P07 | 4 | 134 | `(20440, 0, 180)` | `+Y` | `+X` |
+| P08 | 2 | 134 | `(21080, 750, 0)` | `+Z` | `+Y` |
+| P09 | 5 | 134 | `(20610, 3570, 0)` | `+Z` | `-X` |
+| P10 | 10 | 134 | `(27660, 5862, 163)` | `-X` | `+Y` |
+| P11 이동 전 | 12 | 134 | `(19475, 5752, 1250)` | `+X` | `-Y` |
+| P11 이동 후 | 12 | 134 | `(19475, 6012, 1250)` | `+X` | `-Y` |
+| P12 | 8 | 34 | `(20235, 6792, 1330)` | `-Y` | `+Z` |
+
+P11 변경:
+
+```mermaid
+flowchart LR
+    A["P11 이동 전<br/>(19475, 5752, 1250)"] -->|"+Y 260 mm"| B["P11 이동 후<br/>(19475, 6012, 1250)"]
+```
+
+> P11은 런타임 옵션으로 바꾸지 않고 **Git 브랜치별 하드코딩 좌표**를 사용합니다.
+
+---
+
+# 4. 위치추정 원리
+
+## 단일 마커
+
+```mermaid
+flowchart TD
+    I["Image Corners"] --> P["solvePnP"]
+    P --> MC["Marker → Camera Pose"]
+    MC --> INV["Pose Inversion"]
+    DB["Marker World Pose"] --> COMP["Compose Transform"]
+    INV --> COMP
+    COMP --> CW["Camera World Position"]
+```
+
+마커 코너는 정사각형 PnP 규칙을 사용합니다.
+
+```text
+TL = (-h, +h, 0)
+TR = (+h, +h, 0)
+BR = (+h, -h, 0)
+BL = (-h, -h, 0)
+
+h = marker_size / 2
+```
+
+## 다중 마커 융합
+
+```mermaid
+flowchart TD
+    A["마커별 위치 후보"] --> M["위치 Median"]
+    M --> D{"Median과 거리 ≤ 1500 mm?"}
+    D -->|Yes| K["후보 유지"]
+    D -->|No| R["이상치 제거"]
+
+    K --> W["Weight = Image Area / Reprojection Error²"]
+    W --> F["Weighted XYZ Fusion"]
+    F --> XYZ["Final XYZ"]
+
+    K --> ROT["가장 높은 신뢰도 마커의 Rotation"]
+    ROT --> YAW["Camera Yaw"]
+```
+
+| 요소 | 영향 |
+|---|---|
+| 화면에서 크게 보이는 마커 | 가중치 증가 |
+| 재투영 오차가 작은 마커 | 가중치 증가 |
+| 작은/비스듬한/불안정 마커 | 가중치 감소 |
+| 위치가 중앙값에서 크게 벗어남 | 후보 제거 |
+
+---
+
+# 5. 위치 안정화
+
+실시간 위치가 한 프레임에서 갑자기 멀리 튀는 현상을 바로 반영하지 않습니다.
+
+```mermaid
+flowchart TD
+    A["새 XYZ"] --> B{"허용 이동량 이내?"}
+    B -->|Yes| C["History에 추가"]
+    C --> D["Median"]
+    D --> E["EMA"]
+    E --> F["안정 위치"]
+
+    B -->|No| G["Pending 후보"]
+    G --> H{"비슷한 새 위치가 연속 검출?"}
+    H -->|No| I["기존 위치 유지"]
+    H -->|Yes| J["실제 이동으로 재획득"]
+    J --> F
+```
+
+### 위치가 잠깐 사라진 경우
+
+```mermaid
+stateDiagram-v2
+    [*] --> Tracking
+    Tracking --> Waiting: ArUco/Pose 일시 실패
+    Waiting --> Waiting: 마지막 위치·경로 유지
+    Waiting --> Tracking: 다음 정상 위치 입력
+```
+
+즉, 마커가 순간적으로 사라져도 미니맵과 네비게이션이 즉시 초기화되지 않습니다.
+
+---
+
+# 6. 네비게이션
+
+## 이동 순서
+
+```mermaid
+flowchart LR
+    S["시작"] --> C{"앞문 2.5m 이내?"}
+    C -->|No| F["앞문으로 안내"]
+    F --> C
+    C -->|Yes| D4["4번 강의실"]
+    D4 --> D2["2번 강의실"]
+    D2 --> B["뒷문"]
+    B --> END["안내 완료"]
+```
+
+### 경유지 판정
+
+| 지점 | 판정 | 반경 |
+|---|---|---:|
+| 앞문 | 출발 | 2500 mm |
+| 4번 강의실 | 경유 | 2500 mm |
+| 2번 강의실 | 경유 | 2500 mm |
+| 뒷문 | 도착 | 2500 mm |
+
+## 경로 중심선
+
+```mermaid
+flowchart LR
+    A["앞문"] --> B["서쪽 통로"]
+    B --> C["TABLE1 서쪽"]
+    C --> D["4번 강의실"]
+    D --> E["y≈1000 복도"]
+    E --> F["2번 강의실"]
+    F --> G["x≈20500 동쪽 통로"]
+    G --> H["뒷문"]
+```
+
+> 이 경로는 **등록된 지도 구조물을 기반으로 수동 정의한 waypoint 경로**입니다.  
+> 영상 속 사람/의자/이동식 물체를 자동 회피하는 시스템은 아닙니다.
+
+---
+
+# 7. 시선 기준 방향 UI
+
+웹캠 중앙을 가리는 AR 도로는 사용하지 않습니다.
+
+현재 UI는:
+
+```text
+현재 카메라 시선
+vs
+가야 할 경로 방향
+```
+
+의 각도 차이를 보여줍니다.
+
+| 표시 | 의미 |
+|---|---|
+| 가운데 흰 선 | 지금 카메라가 보고 있는 정면 |
+| 노란 삼각형 | 가야 할 방향 |
+| 초록 점 | 실제 좌표 변화로 계산한 이동 방향 |
+| 직선 화살표 | 시선 기준 목표 방향 |
+
+### 안내 문구 예
+
+| 상황 | 화면 문구 |
+|---|---|
+| 거의 정면 | `직진하세요.` |
+| 왼쪽 35° | `왼쪽으로 35° 가세요.` |
+| 오른쪽 60° | `오른쪽으로 60° 가세요.` |
+| 왼쪽 뒤 165° | `왼쪽으로 165° 가세요.` |
+
+> `회전하세요`, `U턴하세요` 같은 표현 대신 **실제로 어느 방향으로 가야 하는지**를 표시합니다.
+
+---
+
+# 8. 네비게이션 상태
+
+```mermaid
+stateDiagram-v2
+    [*] --> Idle
+
+    Idle --> GoFront: 시작 버튼 / 앞문 밖
+    Idle --> Go4: 시작 버튼 / 앞문 2.5m 이내
+
+    GoFront --> Go4: 앞문 진입
+    Go4 --> Go2: 4번 강의실 진입
+    Go2 --> GoBack: 2번 강의실 진입
+    GoBack --> Arrived: 뒷문 진입
+
+    GoFront --> Idle: 종료
+    Go4 --> Idle: 종료
+    Go2 --> Idle: 종료
+    GoBack --> Idle: 종료
+    Arrived --> Idle: 다시 시작
+```
+
+이벤트 메시지는 약 **2초간 크게 표시**됩니다.
+
+| 이벤트 | 메시지 예 |
+|---|---|
+| 시작 | `네비게이션 시작 / 앞문 출발` |
+| 앞문 복귀 | `앞문 도착 / 네비게이션 출발` |
+| 4번 | `4번 강의실 경유` |
+| 2번 | `2번 강의실 경유` |
+| 뒷문 | `뒷문 도착 / 안내 완료` |
+| 종료 | `네비게이션 종료` |
+
+---
+
+# 9. 경로 진행 표시
+
+```mermaid
+flowchart LR
+    POS["현재 XY"] --> PROJ["Route에 직교 투영"]
+    PROJ --> S["현재 Route Progress s"]
+    S --> PAINT["0 → s 구간 초록색"]
+```
+
+진행률은 최고값을 누적 저장하지 않습니다.
+
+따라서 사용자가 뒤로 돌아가면:
+
+```text
+현재 투영 위치도 뒤로 이동
+→ 지나온 길의 초록색 구간도 다시 줄어듦
+```
+
+---
+
+# 10. 안전 경고
+
+| 항목 | 기본값 | 동작 |
+|---|---:|---|
+| 구조물/벽 접근 | 650 mm | 너무 가까우면 경고 |
+| 계획 경로 이탈 | 1500 mm | 경로 선으로 복귀 안내 |
+| 다중 마커 위치 이상치 | 1500 mm | Fusion 후보에서 제외 |
+| 경유/도착 | 2500 mm | 해당 공간 도달로 판정 |
+
+> 문 개구부는 벽에서 제외합니다.
+
+---
+
+# 11. 카메라 캘리브레이션
+
+기본 체스보드:
+
+| 항목 | 값 |
+|---|---:|
+| 내부 코너 | 9 × 6 |
+| 정사각형 | 25 mm |
+| 기본 해상도 | 1280 × 720 |
+| 권장 샘플 | 15 ~ 30장 |
+
+실행:
 
 ```powershell
 python calibrate_webcam.py --camera 1
 ```
 
-**녹화 영상 분석**
+조작:
+
+| 키 | 기능 |
+|---|---|
+| `SPACE` | 샘플 추가 |
+| `C` | 캘리브레이션 계산/저장 |
+| `Q` | 종료 |
+
+생성 파일:
+
+```text
+camera_calibration.npz
+```
+
+> 같은 카메라와 같은 해상도에서 사용하는 것이 중요합니다.
+
+---
+
+# 12. 라이브 위치추정
+
+```powershell
+python webcam_localizer.py --camera 1
+```
+
+화면 축소:
+
+```powershell
+python webcam_localizer.py --camera 1 --preview-width 720 --map-preview-width 650
+```
+
+근사 카메라 모델:
+
+```powershell
+python webcam_localizer.py --camera 1 --force-approx --hfov 60
+```
+
+---
+
+# 13. 실시간 네비게이션
+
+```powershell
+python navigation_live.py --camera 1
+```
+
+### 조작
+
+| 키/버튼 | 기능 |
+|---|---|
+| `네비게이션 시작 / 다시 시작` | 경로 안내 시작 |
+| `네비게이션 종료` | 안내만 중단 |
+| `N` | 시작/재시작 |
+| `X` | 네비게이션 종료 |
+| `S` | 현재 카메라 화면 저장 |
+| `Q / ESC` | 프로그램 종료 |
+
+### Navigation Control 성능 표시
+
+| 항목 | 의미 |
+|---|---|
+| `Frame` | 현재 처리 프레임 번호 |
+| `화면 FPS` | 메인 루프 기준 화면 갱신 속도 |
+| `처리 ms` | 카메라 입력 → 위치추정 → 네비게이션 → 지도 생성 시간 |
+| `처리 FPS` | 처리시간을 FPS로 환산한 값 |
+
+---
+
+# 14. 녹화 영상
+
+기본:
 
 ```powershell
 python video_localizer.py test.mp4 --preview
 ```
 
-**촬영 장비를 알 수 없는 영상**
+촬영 장비를 모르는 경우:
 
 ```powershell
 python video_localizer.py test.mp4 --no-calibration --preview
 ```
 
-**결과 비교**
+## Preview mode
+
+| 모드 | 특징 | 용도 |
+|---|---|---|
+| `all` | 모든 프레임 분석 | 정량 비교 |
+| `all --preview-fast` | 대기 없이 전 프레임 분석 | 빠른 처리 |
+| `realtime` | 실제 재생시간 우선, 필요 시 source frame skip | 시연/흐름 확인 |
+
+예:
 
 ```powershell
-python compare_localization_results.py test_results\positions.csv
+python video_localizer.py test.mp4 --no-calibration --preview --preview-mode all
 ```
 
-### 전체 처리 흐름
+---
+
+# 15. 영상 결과 비교
 
 ```mermaid
 flowchart LR
-    A[Camera / Video] --> B[ArUco Detection]
-    B --> C[Marker ID Lookup]
-    C --> D[solvePnP]
-    D --> E[World Coordinate Transform]
-    E --> F[Per-Marker Pose]
-    F --> G[Outlier Rejection]
-    G --> H[Weighted Fusion]
-    H --> I[Final XYZ + Yaw]
-    I --> J[Live Map / Landmark Decision]
+    P["Frame Pose"] --> S["Best Single"]
+    P --> F["Weighted Fusion"]
+    F --> E["Temporal EMA"]
+
+    S --> CSV["positions.csv"]
+    F --> CSV
+    E --> CSV
 ```
 
-### 사용 기술
+| 방식 | 설명 |
+|---|---|
+| Best Single | 신뢰도 가장 높은 단일 마커 |
+| Weighted Fusion | 여러 마커 이상치 제거 후 가중 평균 |
+| Temporal EMA | Fusion 결과 시간축 평활화 |
+
+Ground Truth가 있으면:
+
+```powershell
+python compare_localization_results.py test_results\positions.csv --ground-truth gt.csv
+```
+
+평가 예:
 
 ```text
-ArUco Fiducial Marker
-+ OpenCV
-+ Camera Calibration
-+ solvePnP
-+ Coordinate Transform
-+ Weighted Multi-Marker Fusion
+MAE 3D
+RMSE 3D
+Median 3D Error
+P95 3D Error
+MAE XY
+RMSE XY
 ```
 
-사용하지 않는 기술:
+---
+
+# 16. 단일 이미지 / 이미지 일괄 판정
+
+## 단일 이미지
+
+```powershell
+python image_localizer.py test.jpg --no-calibration --preview
+```
+
+생성:
+
+```text
+annotated.png
+map.png
+result.json
+```
+
+## 여러 이미지
+
+```powershell
+python batch_image_localizer.py "C:\이미지폴더" --no-calibration
+```
+
+결과:
+
+```text
+image_results/
+├─ 0001_name/
+│  ├─ annotated.png
+│  ├─ map.png
+│  └─ result.json
+├─ ...
+├─ batch_summary.csv
+├─ batch_summary.json
+├─ batch_summary.html
+└─ failed_images.txt
+```
+
+브라우저:
+
+```powershell
+start .\image_results\batch_summary.html
+```
+
+> HTML만 따로 보내면 이미지 상대경로가 깨질 수 있으므로 `image_results` 폴더 전체를 ZIP으로 전달합니다.
+
+---
+
+# 17. 파일 구조
+
+```text
+machine-vision1/
+├─ aruco_world_map.py
+├─ camera_calibration.py
+├─ calibrate_webcam.py
+├─ check_marker_database.py
+├─ coordinate_system.py
+├─ pose_localizer.py
+├─ live_map_view.py
+├─ webcam_localizer.py
+├─ navigation_engine.py
+├─ navigation_live.py
+├─ video_localizer.py
+├─ image_localizer.py
+├─ batch_image_localizer.py
+├─ compare_localization_results.py
+├─ requirements_navigation.txt
+├─ docs/
+│  ├─ navigation_v7_ui_overview.png
+│  └─ navigation_v7_straight_arrow_preview.png
+└─ README.md
+```
+
+## 파일 역할
+
+| 파일 | 역할 |
+|---|---|
+| `aruco_world_map.py` | 마커 ID/크기/XYZ/FACE/TOP |
+| `camera_calibration.py` | 카메라 파라미터 로딩 + HFOV 근사 |
+| `calibrate_webcam.py` | 체스보드 캘리브레이션 |
+| `coordinate_system.py` | 문/랜드마크 좌표와 거리 |
+| `pose_localizer.py` | PnP, 좌표변환, 다중 마커 융합 |
+| `live_map_view.py` | XY 미니맵 |
+| `webcam_localizer.py` | 실시간 위치추정 |
+| `navigation_engine.py` | 경로/상태/안정화/UI |
+| `navigation_live.py` | 라이브 네비게이션 실행 |
+| `video_localizer.py` | 동영상 분석 |
+| `image_localizer.py` | 단일 이미지 판정 |
+| `batch_image_localizer.py` | 이미지 폴더 일괄 판정 |
+| `compare_localization_results.py` | 결과 비교/오차 평가 |
+
+---
+
+# 18. 대표 이슈와 해결
+
+| 문제 | 원인 | 현재 대응 |
+|---|---|---|
+| 실측/CAD 누적오차 | 3m 줄자, 상대 측정 | mm 좌표 통일 + 현장 재검증 |
+| 마커 방향 해석 오류 | 설치 문자열 해석 혼동 | `FACE/TOP` 직접 정의 |
+| ID/크기/위치 불일치 | 현장 정보 변경 | Marker DB 중앙관리 |
+| P10 Pose 불안정 | 마커가 평평하지 않음 | 재부착 권장 + reprojection 신뢰도 반영 |
+| P11 가림 | 장애물 Occlusion | `+Y 260mm` 이동 브랜치 |
+| 먼/작은 마커 미검출 | 픽셀 부족 | 크기/거리/각도/조명 점검 |
+| 다른 카메라 영상 | Calibration 불일치 | `--no-calibration --hfov` |
+| 순간 좌표 튐 | PnP/검출 노이즈 | Jump gate + Median + EMA |
+| 마커 순간 미검출 | 가림/각도 | 마지막 정상 상태 유지 |
+| 작은 노트북 화면 | 2창/3창 정보 충돌 | 카메라/맵/컨트롤 분리 |
+
+---
+
+# 19. 제한사항
+
+| 제한 | 의미 |
+|---|---|
+| 마커 의존 | 등록 ArUco가 보이지 않으면 새 절대 위치 갱신 불가 |
+| 실측 오차 | 지도 좌표 오차가 위치 결과에 직접 반영 |
+| 광학 중심 | 사용자 몸 중심이 아니라 카메라 위치 |
+| 2.5m 판정 | 실제 방 경계가 아니라 중심점 XY 거리 |
+| 정적 장애물 | 등록한 벽/구조물만 거리 경고 |
+| 동적 장애물 | 사람/의자 실시간 회피 없음 |
+| 뒷문 | 현재 기존 쪽문 좌표 사용 |
+| HFOV 근사 | 직접 Calibration보다 절대 위치 정확도가 낮음 |
+
+---
+
+# 20. 프로젝트 성격
+
+```mermaid
+flowchart LR
+    A["Fiducial Marker"] --> B["Camera Geometry"]
+    B --> C["PnP"]
+    C --> D["Coordinate Transform"]
+    D --> E["Rule-based Fusion"]
+    E --> F["Rule-based Navigation"]
+```
+
+### 사용하는 것
+
+```text
+OpenCV
+ArUco Fiducial Marker
+Camera Calibration
+solvePnP
+Rigid Coordinate Transform
+Weighted Fusion
+Rule-based Navigation
+```
+
+### 사용하지 않는 것
 
 ```text
 Deep Learning
@@ -96,488 +745,12 @@ Neural Network
 Model Training
 ```
 
-> 더 자세한 설치 방법, 좌표계, 가중 평균 방식, 동영상 테스트, Ground Truth 평가, 파일 구조와 제한사항은 아래 **자세히 보기**를 펼쳐 확인할 수 있습니다.
-
-</details>
-
-
+---
 
 <details>
-<summary><strong>📖 자세히 보기</strong></summary>
+<summary><strong>동영상 결과 파일 / CSV 컬럼 자세히 보기</strong></summary>
 
-<br>
-
-ArUco 마커와 PnP 기반으로 실내에서 카메라의 위치를 추정하는 **비학습식 실내 위치추정 시스템**입니다.
-
-딥러닝, 머신러닝, 신경망 모델을 사용하지 않으며, OpenCV의 ArUco 검출과 카메라 기하학을 이용합니다.
-
-주요 기능은 다음과 같습니다.
-
-- 실시간 웹캠 기반 ArUco 검출
-- 마커별 카메라 월드 좌표 계산
-- 여러 마커 검출 시 이상치 제거 + 가중 평균
-- 카메라 방향(Yaw) 계산
-- 실시간 XY 미니맵 표시
-- 문/랜드마크 주변 판정
-- 체스보드 기반 카메라 캘리브레이션
-- 캘리브레이션이 없는 카메라의 HFOV 근사 모드
-- 녹화 동영상 기반 위치 판정
-- 단일 마커 / 다중 마커 융합 / 시간축 EMA 결과 비교
-- 결과 영상, CSV, JSON 저장
-- Ground Truth 기반 MAE / RMSE / P95 비교
-
----
-
-## 1. 시스템 개요
-
-```mermaid
-flowchart LR
-    A[Camera / Video] --> B[ArUco Detection]
-    B --> C[Marker ID Lookup]
-    C --> D[solvePnP]
-    D --> E[Marker Coordinate to World Coordinate]
-    E --> F[Camera Position per Marker]
-
-    F --> G[Outlier Rejection]
-    G --> H[Weighted Fusion]
-    H --> I[Final XYZ Position]
-
-    H --> J[Best Rotation Selection]
-    J --> K[Camera Yaw]
-
-    I --> L[Live XY Map]
-    K --> L
-
-    I --> M[Landmark Distance Check]
-    M --> N[주변 위치 판정]
-```
-
----
-
-## 2. 위치 추정 방식
-
-각 ArUco 마커는 다음 정보를 가집니다.
-
-- Marker ID
-- 실제 마커 크기(mm)
-- 월드 좌표 `(x, y, z)`
-- 마커 정면 방향 `FACE`
-- 마커 이미지의 위쪽 방향 `TOP`
-
-마커 로컬 좌표계는 다음과 같습니다.
-
-```text
-local +X = RIGHT
-local +Y = TOP
-local +Z = FACE
-```
-
-`RIGHT` 방향은 다음 식으로 계산합니다.
-
-```text
-RIGHT = TOP × FACE
-```
-
-카메라 위치 계산은 각 마커에 대해 `solvePnP()`를 수행한 뒤 월드 좌표계로 변환합니다.
-
----
-
-## 3. 여러 마커가 동시에 보일 때
-
-여러 마커에서 계산된 위치를 단순 평균하지 않습니다.
-
-먼저 위치가 크게 벗어난 결과를 제거하고, 남은 마커에 대해 신뢰도 기반 가중 평균을 수행합니다.
-
-```mermaid
-flowchart TD
-    A[여러 ArUco 마커 검출] --> B[마커별 카메라 위치 계산]
-    B --> C[위치 중앙값 계산]
-    C --> D{중앙값과의 거리}
-    D -->|허용 범위 이내| E[사용]
-    D -->|기본 1500 mm 이상| F[이상치 제거]
-
-    E --> G[가중치 계산]
-    G --> H[가중 평균]
-    H --> I[최종 카메라 XYZ]
-```
-
-가중치는 기본적으로 다음 요소를 반영합니다.
-
-```text
-가중치 ∝ 마커가 화면에서 차지하는 면적 / 재투영 오차²
-```
-
-따라서:
-
-- 화면에서 크게 보이는 마커 → 높은 가중치
-- 재투영 오차가 작은 마커 → 높은 가중치
-- 작게 보이거나 자세 추정이 불안정한 마커 → 낮은 가중치
-
-위치는 여러 마커를 융합하지만, 회전행렬은 단순 평균하지 않고 신뢰도가 높은 마커의 회전을 사용합니다.
-
----
-
-## 4. 월드 좌표계
-
-본 프로젝트는 **mm 단위**를 사용합니다.
-
-```text
-+X : 평면도 기준 오른쪽
--X : 평면도 기준 왼쪽
-
-+Y : 평면도 기준 위쪽
--Y : 평면도 기준 아래쪽
-
-+Z : 바닥 → 천장
--Z : 천장 → 바닥
-```
-
-```mermaid
-flowchart TB
-    Z["+Z : Ceiling"]
-    O["Origin / XY Plane"]
-    NZ["-Z"]
-    X["+X : Right"]
-    NX["-X : Left"]
-    Y["+Y : Up on Map"]
-    NY["-Y : Down on Map"]
-
-    Z --- O
-    O --- NZ
-    NX --- O --- X
-    Y --- O --- NY
-```
-
----
-
-# 설치
-
-## 5. 요구 환경
-
-권장 환경:
-
-```text
-Python 3.10+
-Windows
-OpenCV Contrib
-NumPy
-```
-
-필수 패키지:
-
-```powershell
-python -m pip install numpy opencv-contrib-python
-```
-
-또는:
-
-```powershell
-python -m pip install -r requirements.txt
-```
-
-설치 확인:
-
-```powershell
-python -c "import cv2, numpy; print(cv2.__version__); print(hasattr(cv2, 'aruco'))"
-```
-
-마지막 값이 `True`여야 합니다.
-
----
-
-## 6. 가상환경 사용
-
-Windows PowerShell 기준:
-
-```powershell
-python -m venv .venv
-```
-
-활성화:
-
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
-
-패키지 설치:
-
-```powershell
-python -m pip install -r requirements.txt
-```
-
-현재 사용 중인 Python 확인:
-
-```powershell
-python -c "import sys; print(sys.executable)"
-```
-
----
-
-# 카메라 캘리브레이션
-
-## 7. 캘리브레이션 실행
-
-카메라 고유의 초점거리와 렌즈 왜곡을 얻기 위해 체스보드 캘리브레이션을 지원합니다.
-
-기본 설정:
-
-```text
-내부 코너 : 9 × 6
-정사각형 크기 : 25 mm
-해상도 : 1280 × 720
-```
-
-실행:
-
-```powershell
-python calibrate_webcam.py --camera 1
-```
-
-카메라 번호를 모를 경우:
-
-```powershell
-python calibrate_webcam.py
-```
-
-### 조작키
-
-```text
-SPACE : 현재 체스보드 프레임을 샘플로 추가
-C     : 캘리브레이션 계산 및 저장
-Q     : 종료
-```
-
-권장 샘플 수:
-
-```text
-15 ~ 30장
-```
-
-샘플은 화면 중앙만 찍지 말고 다음과 같이 다양하게 확보하는 것이 좋습니다.
-
-- 좌측 / 우측
-- 상단 / 하단
-- 가까운 거리 / 먼 거리
-- 기울어진 각도
-
-결과 파일:
-
-```text
-camera_calibration.npz
-```
-
-채택된 체스보드 이미지는 기본적으로:
-
-```text
-calibration_samples/
-```
-
-에 저장됩니다.
-
-> 캘리브레이션 파일은 **촬영한 카메라와 해상도에 종속적**입니다. 다른 장비로 촬영한 영상에 기존 캘리브레이션 값을 그대로 적용하면 위치 오차가 증가할 수 있습니다.
-
----
-
-# 실시간 위치 추정
-
-## 8. 연결된 카메라 확인
-
-```powershell
-python webcam_localizer.py --list-cameras
-```
-
-예:
-
-```text
-[FOUND] camera 0 ...
-[FOUND] camera 1 ...
-```
-
----
-
-## 9. 라이브 실행
-
-예를 들어 외장 웹캠이 `camera 1`이라면:
-
-```powershell
-python webcam_localizer.py --camera 1
-```
-
-기본 동작:
-
-- 카메라 화면 표시
-- ArUco ID 표시
-- 마커별 위치 계산
-- 다중 마커 위치 융합
-- 현재 XYZ 표시
-- 현재 방향 표시
-- 실시간 XY 미니맵 표시
-- 가까운 문/랜드마크 판정
-
-카메라 창과 미니맵은 **서로 독립된 창**으로 표시됩니다.
-
-### 노트북 화면에 맞게 축소
-
-```powershell
-python webcam_localizer.py --camera 1 --preview-width 720 --map-preview-width 650
-```
-
-이 옵션은 **표시 화면만 축소**합니다.
-
-ArUco 검출 및 PnP 계산은 원본 카메라 프레임 해상도로 계속 수행됩니다.
-
----
-
-## 10. 라이브 조작키
-
-```text
-S     : 현재 카메라 프레임 저장
-I     : 현재 검출된 마커별 위치 정보 콘솔 출력
-Q     : 종료
-ESC   : 종료
-```
-
----
-
-## 11. 캘리브레이션 없이 라이브 테스트
-
-캘리브레이션 파일을 강제로 사용하지 않고 근사 카메라 모델로 실행:
-
-```powershell
-python webcam_localizer.py --camera 1 --force-approx
-```
-
-기본 수평 화각:
-
-```text
-HFOV = 60°
-```
-
-다른 값을 사용할 경우:
-
-```powershell
-python webcam_localizer.py --camera 1 --force-approx --hfov 70
-```
-
-이 방식은 현장 기능 테스트에는 사용할 수 있지만, 실제 mm 단위 절대 위치 정확도는 직접 캘리브레이션한 경우보다 낮을 수 있습니다.
-
----
-
-# 실시간 미니맵
-
-## 12. 미니맵 표시
-
-`live_map_view.py`는 실측 및 CAD 기반 실내 구조를 XY 평면도로 표현합니다.
-
-표시되는 정보:
-
-```text
-구조물 / 벽 / 문
-등록된 ArUco 위치
-현재 카메라 위치
-카메라의 XY 진행 방향
-사용된 마커
-위치 산포(spread)
-```
-
-```mermaid
-flowchart LR
-    A[World XYZ] --> B[XY Projection]
-    B --> C[World-to-Pixel Transform]
-    C --> D[Indoor XY Map]
-    E[Camera Rotation] --> F[Yaw]
-    F --> D
-```
-
-미니맵을 끄려면:
-
-```powershell
-python webcam_localizer.py --camera 1 --no-map
-```
-
----
-
-# 녹화 동영상 테스트
-
-## 13. 동영상 위치 판정
-
-테스트 동영상이 프로젝트 폴더의 `test.mp4`라면:
-
-```powershell
-python video_localizer.py test.mp4
-```
-
-실시간으로 처리 과정을 확인하려면:
-
-```powershell
-python video_localizer.py test.mp4 --preview
-```
-
----
-
-## 14. 촬영 장비를 알 수 없는 테스트 영상
-
-촬영 카메라와 기존 `camera_calibration.npz`가 일치하지 않는 경우 기존 캘리브레이션을 사용하지 않는 것이 좋습니다.
-
-```powershell
-python video_localizer.py test.mp4 --no-calibration --preview
-```
-
-이 경우:
-
-- 영상 해상도는 실제 파일에서 읽음
-- 수평 화각은 기본 `60°`로 가정
-- 렌즈 왜곡은 0으로 가정
-- 근사 카메라 행렬을 생성하여 사용
-
-HFOV를 알고 있다면:
-
-```powershell
-python video_localizer.py test.mp4 --no-calibration --hfov 70 --preview
-```
-
-> 촬영 장비와 카메라 내부 파라미터가 불명확한 영상은 절대 위치 정확도 평가보다 **동일 영상에 대한 알고리즘 비교**에 사용하는 것이 적절합니다.
-
----
-
-## 15. 동영상 미리보기 조작
-
-```text
-SPACE       : 일시정지 / 재생
-N 또는 .    : 다음 프레임 1장
-[ 또는 -    : 재생속도 감소
-] 또는 +    : 재생속도 증가
-R           : 1.0배속
-S           : 현재 판정 화면 저장
-Q / ESC     : 종료
-```
-
-지원 속도:
-
-```text
-0.125x
-0.25x
-0.5x
-1.0x
-1.5x
-2.0x
-4.0x
-8.0x
-```
-
-미리보기 화면 크기 변경:
-
-```powershell
-python video_localizer.py test.mp4 --no-calibration --preview --preview-width 800
-```
-
----
-
-# 동영상 결과
-
-## 16. 자동 생성 결과
-
-기본적으로 다음 구조로 결과가 생성됩니다.
+### 기본 결과
 
 ```text
 test_results/
@@ -587,27 +760,11 @@ test_results/
 └─ snapshots/
 ```
 
-### `annotated.mp4`
-
-다음 정보를 영상에 표시합니다.
-
-- 검출된 ArUco ID
-- 마커별 위치
-- 최종 위치
-- 융합 결과
-- 시간축 보정 결과
-- 미니맵
-
-### `positions.csv`
-
-프레임별 위치 추정 결과입니다.
-
-주요 컬럼:
+주요 `positions.csv` 컬럼:
 
 ```text
 frame
 time_sec
-
 detected_ids
 registered_ids
 used_ids
@@ -627,546 +784,30 @@ ema_z_mm
 
 yaw_deg
 spread_mm
-
 nearest_landmark
 nearest_landmark_distance_mm
 ```
 
-### `summary.json`
-
-전체 영상에 대한 다음 정보를 저장합니다.
-
-- 처리 프레임 수
-- ArUco 검출률
-- 등록 마커 검출률
-- Pose 계산 성공률
-- 평균 재투영 오차
-- 중앙값 재투영 오차
-- 위치 spread
-- 사용된 마커 빈도
-- 카메라 모델 방식
-- HFOV 근사값
-
----
-
-# 테스트 방법 비교
-
-## 17. 세 가지 위치 결과
-
-동영상 테스트에서는 동일 프레임에 대해 다음 세 결과를 저장합니다.
-
-```mermaid
-flowchart TD
-    A[Frame] --> B[ArUco Pose Estimates]
-
-    B --> C[Best Single]
-    B --> D[Weighted Fusion]
-
-    D --> E[Temporal EMA]
-
-    C --> F[positions.csv]
-    D --> F
-    E --> F
-```
-
-### Best Single
-
-현재 프레임에서 신뢰도가 가장 높은 단일 마커의 위치만 사용합니다.
-
-```text
-best_single_x_mm
-best_single_y_mm
-best_single_z_mm
-```
-
-### Weighted Fusion
-
-여러 마커의 이상치를 제거한 뒤 가중 평균한 결과입니다.
-
-```text
-fused_x_mm
-fused_y_mm
-fused_z_mm
-```
-
-### Temporal EMA
-
-Weighted Fusion 결과에 시간축 EMA를 적용합니다.
-
-```text
-ema_x_mm
-ema_y_mm
-ema_z_mm
-```
-
-기본 EMA 계수:
-
-```text
-alpha = 0.25
-```
-
-변경:
-
-```powershell
-python video_localizer.py test.mp4 --ema-alpha 0.4
-```
-
----
-
-# 모델 / 방법 비교
-
-## 18. Ground Truth 없이 비교
-
-```powershell
-python compare_localization_results.py test_results\positions.csv
-```
-
-Ground Truth가 없을 경우 다음과 같은 값을 이용해 결과를 비교할 수 있습니다.
-
-- Pose Coverage
-- 프레임 간 위치 변화량
-- Mean Step
-- Median Step
-- P95 Step
-
-> 이동 중인 영상의 프레임 간 변화량은 실제 이동도 포함하므로 순수한 위치 오차와 동일한 값은 아닙니다. 정지 구간의 흔들림 비교에 특히 유용합니다.
-
----
-
-## 19. Ground Truth 기반 비교
-
-Ground Truth CSV 형식:
-
-```csv
-frame,x_mm,y_mm,z_mm
-0,19195,2500,1300
-1,19195,2500,1300
-2,19195,2500,1300
-```
-
-실행:
-
-```powershell
-python compare_localization_results.py test_results\positions.csv --ground-truth gt.csv
-```
-
-계산 항목:
-
-```text
-MAE 3D
-RMSE 3D
-Median 3D Error
-P95 3D Error
-MAE XY
-RMSE XY
-```
-
----
-
-# Pose Frames 해석
-
-## 20. `Pose frames : 127 (14.8%)`
-
-예:
-
-```text
-Pose frames : 127 (14.8%)
-```
-
-의 의미는 전체 영상 프레임 중 **유효한 위치/자세를 계산할 수 있었던 프레임이 127개이며, 전체의 14.8%라는 뜻**입니다.
-
-Pose 계산 과정:
-
-```mermaid
-flowchart TD
-    A[Video Frame] --> B{ArUco 검출?}
-    B -->|No| X[Pose 없음]
-    B -->|Yes| C{등록된 Marker ID?}
-    C -->|No| X
-    C -->|Yes| D{solvePnP 성공?}
-    D -->|No| X
-    D -->|Yes| E[Camera Pose]
-    E --> F[Pose Frame]
-```
-
-Pose Coverage는 전체 시스템의 한 지표이며, 영상에 마커가 애초에 보이지 않은 구간이 많다면 낮게 나올 수 있습니다.
-
----
-
-# 프로젝트 구조
-
-## 21. 파일 구성
-
-```text
-aruco_indoor_localizer_v2/
-├─ aruco_world_map.py
-├─ camera_calibration.py
-├─ calibrate_webcam.py
-├─ check_marker_database.py
-├─ coordinate_system.py
-├─ live_map_view.py
-├─ pose_localizer.py
-├─ webcam_localizer.py
-├─ video_localizer.py
-├─ compare_localization_results.py
-├─ requirements.txt
-└─ README.md
-```
-
-각 파일의 역할:
-
-| 파일 | 역할 |
-|---|---|
-| `aruco_world_map.py` | ArUco ID, 실제 크기, 월드 좌표, FACE/TOP 방향 관리 |
-| `camera_calibration.py` | 카메라 내부 파라미터 로딩 및 HFOV 근사 모델 생성 |
-| `calibrate_webcam.py` | 체스보드 기반 카메라 캘리브레이션 |
-| `check_marker_database.py` | 등록된 마커 데이터 검증 |
-| `coordinate_system.py` | 문/랜드마크 좌표 및 주변 판정 |
-| `pose_localizer.py` | solvePnP, 월드 좌표 변환, 다중 마커 융합 |
-| `live_map_view.py` | 실시간 XY 미니맵 렌더링 |
-| `webcam_localizer.py` | 실시간 웹캠 위치 추정 실행 |
-| `video_localizer.py` | 녹화 영상 위치 추정 및 결과 저장 |
-| `compare_localization_results.py` | 위치 추정 결과 비교 |
-
----
-
-## 22. 모듈 구조
-
-```mermaid
-graph TD
-    WM[aruco_world_map.py]
-    CC[camera_calibration.py]
-    CS[coordinate_system.py]
-    PL[pose_localizer.py]
-    LM[live_map_view.py]
-
-    WEB[webcam_localizer.py]
-    VID[video_localizer.py]
-    CMP[compare_localization_results.py]
-    CAL[calibrate_webcam.py]
-
-    WM --> PL
-    CC --> PL
-
-    WM --> WEB
-    CC --> WEB
-    CS --> WEB
-    PL --> WEB
-    LM --> WEB
-
-    WM --> VID
-    CC --> VID
-    CS --> VID
-    PL --> VID
-    LM --> VID
-
-    VID --> CMP
-    CAL --> CC
-```
-
----
-
-# ArUco 데이터 관리
-
-## 23. Marker Database
-
-마커 정보는 `aruco_world_map.py`에서 관리합니다.
-
-각 마커에는 다음 정보가 정의됩니다.
-
-```text
-point_name
-name
-description
-marker_id
-size_mm
-x
-y
-z
-face_world
-top_world
-```
-
-마커 설치 위치나 방향을 변경한 경우 반드시 데이터베이스 좌표도 함께 수정해야 합니다.
-
-검증:
-
-```powershell
-python check_marker_database.py
-```
-
----
-
-# 정확도에 영향을 주는 요소
-
-## 24. 주요 오차 원인
-
-본 시스템의 위치 정확도는 다음 조건에 영향을 받습니다.
-
-### 카메라 캘리브레이션
-
-다른 카메라의 캘리브레이션을 사용할 경우 PnP 결과에 오차가 발생할 수 있습니다.
-
-### 마커 실제 크기
-
-설정한 `size_mm`와 실제 출력된 마커 크기가 다르면 거리 추정 오차가 발생합니다.
-
-### 마커 설치 방향
-
-FACE / TOP 정보가 실제 설치 방향과 다르면 월드 좌표 변환 결과가 잘못됩니다.
-
-### 마커 평면 상태
-
-마커가 구겨지거나 벽에서 들떠 평평하지 않으면 4개 코너의 기하학적 관계가 변형되어 Pose 오차가 증가할 수 있습니다.
-
-### Occlusion
-
-중간 장애물로 마커 일부가 가려지면 검출률과 Pose 안정성이 떨어집니다.
-
-### 작은 마커
-
-34 mm와 같이 작은 마커는 먼 거리에서 픽셀 수가 부족해 검출과 자세 계산이 불안정해질 수 있습니다.
-
-### 카메라와 마커의 각도
-
-마커를 매우 비스듬하게 바라보면 코너 오차와 단일 평면 Pose의 불안정성이 커질 수 있습니다.
-
-### 조명 / 반사
-
-빛 반사, 어두운 환경, 모션 블러는 마커 검출률에 영향을 줍니다.
-
----
-
-# 시스템 특성 및 제한
-
-## 25. 현재 시스템의 성격
-
-이 프로젝트는 다음과 같은 **전통적 컴퓨터 비전 기반 시스템**입니다.
-
-```text
-ArUco Fiducial Marker
-        +
-Camera Calibration
-        +
-solvePnP
-        +
-Coordinate Transform
-        +
-Multi-Marker Weighted Fusion
-```
-
-사용하지 않는 것:
-
-```text
-Deep Learning
-Machine Learning
-Neural Network
-Model Training
-```
-
-따라서 별도의 학습 데이터나 GPU 학습 과정이 필요하지 않습니다.
-
----
-
-## 26. 현재 제한사항
-
-- 등록된 ArUco가 보이지 않으면 절대 위치를 계산할 수 없음
-- 단일 평면 마커 Pose는 거리와 각도에 따라 노이즈가 발생할 수 있음
-- 실측/CAD 기반 월드 좌표 자체에 오차가 있으면 결과에도 반영됨
-- 카메라 위치는 사용자의 몸 중심이 아니라 **카메라 광학 중심** 기준
-- 랜드마크 주변 판정은 현재 XY 평면 거리 기준
-- 경로 거리나 장애물 회피 거리는 계산하지 않음
-- HFOV 근사 모드는 직접 캘리브레이션보다 정확도가 낮음
-
----
-
-# 빠른 실행 요약
-
-## 27. 실시간 위치 추정
-
-```powershell
-python webcam_localizer.py --camera 1
-```
-
-카메라 번호 확인:
-
-```powershell
-python webcam_localizer.py --list-cameras
-```
-
-작은 화면:
-
-```powershell
-python webcam_localizer.py --camera 1 --preview-width 720 --map-preview-width 650
-```
-
----
-
-## 28. 카메라 캘리브레이션
-
-```powershell
-python calibrate_webcam.py --camera 1
-```
-
----
-
-## 29. 테스트 동영상
-
-동일 카메라 + 정상 캘리브레이션:
-
-```powershell
-python video_localizer.py test.mp4 --preview
-```
-
-촬영 장비 불명:
-
-```powershell
-python video_localizer.py test.mp4 --no-calibration --preview
-```
-
----
-
-## 30. 결과 비교
-
-```powershell
-python compare_localization_results.py test_results\positions.csv
-```
-
-Ground Truth 포함:
-
-```powershell
-python compare_localization_results.py test_results\positions.csv --ground-truth gt.csv
-```
-
----
-
-# 권장 테스트 시나리오
-
-모델/방법 비교를 위해 하나의 테스트 영상에 다음 상황을 포함하는 것을 권장합니다.
-
-```mermaid
-flowchart LR
-    A[정지 구간] --> B[단일 마커]
-    B --> C[다중 마커]
-    C --> D[이동 구간]
-    D --> E[작은 마커]
-    E --> F[비스듬한 각도]
-    F --> G[일부 가려짐]
-```
-
-이렇게 촬영하면 다음 항목을 비교하기 좋습니다.
-
-- 위치 정확도
-- 검출률
-- Pose Coverage
-- 프레임 간 흔들림
-- 다중 마커 융합 효과
-- 시간축 EMA 효과
-- Occlusion 영향
-- 작은 마커의 인식 한계
-
----
-
-## License
-
-팀 프로젝트 정책에 맞는 라이선스를 별도로 지정할 수 있습니다.
-
+</details>
+
+<details>
+<summary><strong>현장 테스트 체크리스트</strong></summary>
+
+- [ ] 사용 웹캠과 Calibration 파일이 일치하는가
+- [ ] 실행 해상도가 Calibration 해상도와 같은가
+- [ ] ArUco 출력 실제 크기가 `size_mm`와 일치하는가
+- [ ] 마커가 평평하게 부착되어 있는가
+- [ ] FACE / TOP 설치방향이 DB와 일치하는가
+- [ ] P11 브랜치 좌표가 현장 상태와 일치하는가
+- [ ] 앞문/4번/2번/뒷문 2.5m 판정을 현장에서 확인했는가
+- [ ] 650mm 벽 경고가 실제 통로 폭에 적절한가
+- [ ] 카메라 창 방향 지시가 실제 시선 기준과 일치하는가
+- [ ] 위치가 잠깐 끊겨도 UI가 유지되는가
 
 </details>
 
+---
 
+## 한 줄 설명
 
-## 동영상 미리보기 처리 방식 선택
-
-### 1. 모든 프레임 분석 — `all`
-
-모든 영상 프레임을 빠짐없이 ArUco/PnP 분석합니다.
-
-```powershell
-python video_localizer.py test.mp4 --no-calibration --preview --preview-mode all
-```
-
-특징:
-
-```text
-모든 프레임 분석
-CSV에 모든 처리 프레임 기록
-정확한 프레임별 비교에 적합
-
-단점:
-한 프레임 처리 시간이 영상 FPS보다 길면
-미리보기 재생이 원본보다 느려질 수 있음
-```
-
-대기 없이 가능한 최대 속도로 모든 프레임을 분석하려면:
-
-```powershell
-python video_localizer.py test.mp4 --no-calibration --preview --preview-mode all --preview-fast
-```
-
-### 2. 실제 재생시간 우선 — `realtime`
-
-```powershell
-python video_localizer.py test.mp4 --no-calibration --preview --preview-mode realtime
-```
-
-특징:
-
-```text
-원본 영상 재생시간을 최대한 유지
-분석이 느릴 경우 중간 source frame을 자동 skip
-현장에서 영상 흐름을 확인하기 좋음
-
-주의:
-skip된 프레임은 ArUco/PnP 분석 및 CSV 기록을 하지 않음
-따라서 전체 프레임 정밀 비교에는 all 모드를 사용
-```
-
-`summary.json`에는 다음 값이 기록됩니다.
-
-```text
-settings.preview_mode
-video.processed_frames
-video.skipped_frames_realtime
-video.source_frames_advanced
-video.analysis_fraction_of_advanced_frames
-```
-
-모델 비교나 정량 평가에는 `all`,
-실시간에 가까운 영상 확인에는 `realtime` 사용을 권장합니다.
-
-
-## 정지 이미지 판정
-
-이미지 한 장에서 ArUco 기반 위치를 판정하려면:
-
-```powershell
-python image_localizer.py test.jpg --preview
-```
-
-촬영 장비가 불명확하여 기존 캘리브레이션을 사용할 수 없다면:
-
-```powershell
-python image_localizer.py test.jpg --no-calibration --preview
-```
-
-HFOV를 알고 있다면:
-
-```powershell
-python image_localizer.py test.jpg --no-calibration --hfov 70 --preview
-```
-
-생성 결과:
-
-```text
-test_image_result/
-├─ annotated.png
-├─ map.png
-└─ result.json
-```
-
-`annotated.png`에는 검출된 마커, 마커별 위치, Best Single, 다중 마커 융합 위치가 표시됩니다.
-
-`map.png`에는 계산된 현재 위치와 카메라 방향이 XY 미니맵으로 표시됩니다.
-
-`result.json`에는 검출 ID, 등록 ID, 마커별 위치, reprojection error, 가중치, 최종 위치, Yaw, landmark 판정 결과가 저장됩니다.
+> **ArUco 마커와 PnP 기반의 비학습식 실내 위치추정 시스템에, 실측 좌표 기반의 규칙식 실내 네비게이션을 결합한 프로젝트입니다.**

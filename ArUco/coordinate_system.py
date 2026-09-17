@@ -49,7 +49,7 @@ DOOR_LANDMARKS: Dict[str, DoorLandmark] = {
         "front_door",
         "앞문",
         -3760.0,
-        5752.0,
+        6792.0,
     ),
 }
 
