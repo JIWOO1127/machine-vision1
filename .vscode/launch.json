@@ -1,0 +1,40 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Run: Realtime (webcam)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/scripts/run_realtime.py",
+            "args": ["--camera", "0", "--config", "configs/default.yaml"],
+            "console": "integratedTerminal",
+            "env": { "PYTHONPATH": "${workspaceFolder}/src" }
+        },
+        {
+            "name": "Run: Batch (photo folder)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/scripts/run_batch.py",
+            "args": ["--input", "data/raw", "--config", "configs/default.yaml"],
+            "console": "integratedTerminal",
+            "env": { "PYTHONPATH": "${workspaceFolder}/src" }
+        },
+        {
+            "name": "Run: Train YOLO",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/scripts/train_yolo.py",
+            "args": ["--config", "configs/default.yaml"],
+            "console": "integratedTerminal",
+            "env": { "PYTHONPATH": "${workspaceFolder}/src" }
+        },
+        {
+            "name": "Python: Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "env": { "PYTHONPATH": "${workspaceFolder}/src" }
+        }
+    ]
+}

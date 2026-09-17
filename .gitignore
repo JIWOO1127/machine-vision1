@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+.pytest_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Node / 프론트엔드 빌드 산출물 (webapp/frontend에서 npm install / npm run build로 재생성)
+node_modules/
+webapp/frontend/dist/
+
+# Flask 백엔드가 요청마다 만드는 분석 결과 이미지
+webapp/backend/results/*
+!webapp/backend/results/.gitkeep
+
+# 데이터: raw/전처리 중간 산출물은 제외, 학습 데이터셋(data/dataset*)은 포함
+data/raw/*
+data/processed/*
+data/annotations/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/annotations/.gitkeep
+
+# 모델: models/yolo, external/seojiwoo_core 안의 .pt는 포함.
+# ultralytics가 자동으로 내려받는 베이스 가중치/학습 체크포인트/추론 결과는 제외
+models/ocr/*
+!models/ocr/.gitkeep
+runs/
+weights/
+yolov8n.pt
+
+# 실행 결과물 (재생성 가능)
+outputs/*
+!outputs/logs/.gitkeep
+!outputs/results/.gitkeep
+
+# OS / 에디터
+.DS_Store
+.vscode/*.log

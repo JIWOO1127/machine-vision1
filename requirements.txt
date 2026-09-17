@@ -1,0 +1,43 @@
+# 이 파일은 실제 개발 환경(conda env "classroom-locator")에서 동작 확인된
+# 버전으로 고정되어 있습니다. 설치 방법은 README.md의 "환경 구성" 참고.
+
+# ── 공통 (필수) ─────────────────────────────────────────────
+opencv-python==5.0.0.93
+numpy==2.4.6
+PyYAML==6.0.3
+Pillow==12.3.0
+tqdm==4.70.1
+
+# 텍스트 유사도 매칭 (OCR 결과 ↔ 위치 이름 매칭에 사용)
+rapidfuzz==3.14.6
+
+# 복도/평면도 시각화 (scripts/visualize_map.py)
+matplotlib==3.11.2
+
+# 테스트
+pytest==9.1.1
+
+# ── YOLO 백엔드 (ultralytics 사용 중) ──────────────────────────
+ultralytics==8.4.152
+
+# torch/torchvision: 반드시 서로 호환되는 버전 쌍으로 맞춰야 함.
+# (pip install -r requirements.txt만 하면 아래 CPU 빌드가 깔림)
+# GPU(CUDA) 있는 PC에서는 설치 후 아래 명령으로 CUDA 빌드로 덮어쓰기:
+#   pip install torch==2.6.0+cu124 torchvision==0.21.0+cu124 --index-url https://download.pytorch.org/whl/cu124
+# (CUDA 버전이 다르면 cu124를 nvidia-smi에 나온 버전에 맞는 값으로 바꿀 것)
+torch==2.6.0
+torchvision==0.21.0
+
+# ── OCR 백엔드 (easyocr 사용 중) ────────────────────────────────
+easyocr==1.7.2
+
+# [선택] PaddleOCR (한글 포함 다국어 인식 정확도 우수, 현재 미사용)
+# paddlepaddle>=2.6
+# paddleocr>=2.7
+
+# [선택] Tesseract (가볍지만 한글 정확도 상대적으로 낮음, 현재 미사용)
+# pytesseract>=0.3.10
+# (시스템에 tesseract-ocr 엔진 + 한글 언어팩(tesseract-ocr-kor) 별도 설치 필요)
+
+# [선택] scripts/run_seojiwoo_demo.py (classroom_locator.seojiwoo)의 --tts 옵션에만 필요
+# pyttsx3>=2.90

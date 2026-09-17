@@ -1,0 +1,6 @@
+{
+  "_comment": "scripts/calibrate_distance.py로 distance_data 사진에서 뽑은 크기<->거리 보정 상수. k_height/k_width = 실제거리(m) * (bbox 변 길이 / 이미지 해당 변 길이). 거리 추정 시 distance = k / (bbox 변 길이 / 프레임 해당 변 길이).",
+  "front_door": { "k_height": 1.75572, "k_width": 4.15693, "n_samples": 3 },
+  "rear_door": { "k_height": 1.29817, "k_width": 1.44494, "n_samples": 5 },
+  "sign": { "k_height": 0.11434, "k_width": 0.10707, "n_samples": 3 }
+}
