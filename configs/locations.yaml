@@ -20,6 +20,8 @@ grid:
   cell_size_m: 1.8
 
 locations:
+  # sign은 실제 지도 위 한 점이 아니라, OCR 검증 대상인 2/3/4 표지판 묶음이다.
+  # 따라서 별도 locations 항목으로 만들지 않고 room2/room3/room4에 매핑한다.
   # 일자형 복도, 4강의실 - 3강의실 - 2강의실 순서.
   # name은 YOLO 클래스명(room2/room3/room4)과 동일하게 맞춰서, 탐지 클래스로
   # 바로 위치를 조회할 수 있게 합니다. 실제 표지판 텍스트는 aliases에 넣어서

@@ -11,7 +11,9 @@ import numpy as np
 import torch
 from PIL import Image, ImageOps
 
-from services.ocr import draw_ocr_results
+from services.ocr import EasyOCREngine, draw_ocr_results
+from services.position.guide import PositionGuide
+from services.position.route_navigator import RouteNavigator
 from services.visual_localization import VisualLocationEstimator, draw_location_overlay
 from test_inference import draw_detections, load_model
 
@@ -23,6 +25,8 @@ class VisionEngine:
         self.result_dir = result_dir
         self.result_dir.mkdir(parents=True, exist_ok=True)
         self.base_dir = Path(__file__).resolve().parents[1]
+        self.position_guide = PositionGuide(self.base_dir / "services" / "position")
+        self.route_navigator = RouteNavigator()
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.model = None
         self.model_kind = None
@@ -86,6 +90,14 @@ class VisionEngine:
             self.load_error = str(exc)
             self.model = None
             self.ocr = None
+            return
+
+        # OCR의 최초 모델 내려받기/초기화가 실패해도 객체 탐지 서버 전체가 멈추면
+        # 안 된다. 실패하면 YOLO + 거리/격자 안내만으로 계속 동작한다.
+        try:
+            self.ocr = EasyOCREngine(device="auto", languages=["ko", "en"])
+        except Exception:
+            self.ocr = None
 
     @property
     def model_ready(self):
@@ -98,11 +110,13 @@ class VisionEngine:
 
     @property
     def ocr_ready(self):
-        return False
+        return self.ocr is not None
 
     def reset_tracking(self):
         """Reset temporal localization before a new phone video starts."""
         with self.lock:
+            self.position_guide.reset()
+            self.route_navigator.reset()
             self.location_estimator = None
             self.location_frame_width = None
             self.live_label_history.clear()
@@ -182,7 +196,7 @@ class VisionEngine:
 
     def _infer_frame(self, clean_image, estimator):
         output = self._predict_frame(clean_image)
-        image, stats = self._apply_detection_rules(clean_image, output, None)
+        image, stats = self._apply_detection_rules(clean_image, output, self.ocr)
         location = estimator.update(clean_image, stats["observations"])
         return draw_location_overlay(image, location), stats, location
 
@@ -239,7 +253,7 @@ class VisionEngine:
         with self.lock:
             estimator = self._get_location_estimator(clean_image.shape[1])
             output = self._predict_frame(clean_image)
-            _, raw_stats = self._apply_detection_rules(clean_image, output, None)
+            _, raw_stats = self._apply_detection_rules(clean_image, output, self.ocr)
             representative = max(
                 raw_stats["observations"],
                 key=lambda item: item.get("area", 0),
@@ -275,24 +289,30 @@ class VisionEngine:
 
             if not confirmed:
                 self.live_confirmed_frame_count = 0
-                self.live_cached_location = None
                 if stable_label != self.live_cached_source_label:
                     self.live_cached_source_label = None
                     self.live_cached_ocr_readings = []
                     self.live_cached_observation = None
                 collected = len(self.live_label_history)
-                location = {
-                    "status": "confirming",
-                    "label": "객체 확인 중",
-                    "detail": (
-                        f"최근 프레임 수집 {collected}/5"
-                        if collected < 5
-                        else f"최근 5프레임 중 최다 객체 {vote_count}/4"
-                    ),
-                    "confidence": 0.0,
-                    "motion": "",
-                    "candidates": [],
-                }
+                # 한 번 확정한 위치는 탐지가 잠깐 끊겨도 유지한다. 새 영상/재생
+                # 위치 이동 시에는 reset_tracking()이 캐시를 비우므로 그때만
+                # "객체 확인 중"이 다시 표시된다.
+                if self.live_cached_location is not None:
+                    location = dict(self.live_cached_location)
+                    location["detail"] = "마지막으로 확인된 위치를 유지하고 있습니다."
+                else:
+                    location = {
+                        "status": "confirming",
+                        "label": "객체 확인 중",
+                        "detail": (
+                            f"최근 프레임 수집 {collected}/5"
+                            if collected < 5
+                            else f"최근 5프레임 중 최다 객체 {vote_count}/4"
+                        ),
+                        "confidence": 0.0,
+                        "motion": "",
+                        "candidates": [],
+                    }
                 stats = {"observations": [], "ocr_readings": []}
             else:
                 stats = {
@@ -399,18 +419,17 @@ class VisionEngine:
             "rear_door": "쪽문",
         }.get(anchor, anchor)
 
-    @classmethod
-    def _video_timeline_cue(cls, time_seconds, stats, location):
+    def _video_timeline_cue(self, time_seconds, stats, location):
         """Build the text panel shown under the video at this playback time."""
         cue_texts = []
         for reading in stats["ocr_readings"]:
-            displayed = cls._display_reading(reading)
+            displayed = self._display_reading(reading)
             if displayed["text"] and displayed["text"] not in cue_texts:
                 cue_texts.append(displayed["text"])
 
         cue_detections = []
         for observation in stats["observations"]:
-            label = cls._display_detection(observation)["label"]
+            label = self._display_detection(observation)["label"]
             if label not in cue_detections:
                 cue_detections.append(label)
 
@@ -421,7 +440,7 @@ class VisionEngine:
             distance_m = float(measurement["distance_mm"]) / 1000.0
             landmarks.append(
                 {
-                    "name": cls._landmark_display_name(measurement["anchor"]),
+                    "name": self._landmark_display_name(measurement["anchor"]),
                     "distance_m": round(distance_m, 2),
                     "direction": direction,
                     "state": "near" if distance_m <= 2.5 else "far",
@@ -439,7 +458,18 @@ class VisionEngine:
             "confidence": location.get("confidence", 0.0),
             "candidates": location.get("candidates", []),
         }
-        if landmarks:
+        measurements = location.get("measurements", [])
+        position = self.position_guide.resolve(
+            anchors=[str(item.get("anchor", "")) for item in measurements],
+            labels=[str(item.get("label", "")) for item in stats["observations"]],
+            measurements=measurements,
+        )
+        navigation = self.route_navigator.update(measurements)
+        command = navigation["text"] if navigation else (position["command"] if position else None)
+
+        if command:
+            guidance = command
+        elif landmarks:
             nearest = landmarks[0]
             location_label = location_summary["label"]
             location_heading = "추정 위치"
@@ -460,6 +490,9 @@ class VisionEngine:
             "detections": cue_detections,
             "landmarks": landmarks,
             "location": location_summary,
+            "position": position,
+            "navigation": navigation,
+            "command": command,
             "guidance": guidance,
         }
 

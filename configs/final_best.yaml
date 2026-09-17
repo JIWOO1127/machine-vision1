@@ -6,12 +6,25 @@ detector:
   backend: ultralytics
   weights: models/yolo/final_best.pt
   conf_threshold: 0.5
-  target_classes: ["2_class", "4_class", "front_door", "rear_door", "water_dispenser"]
+  target_classes: ["2_class", "4_class", "front_door", "rear_door", "water_dispenser", "logo"]
+  # 3_class는 OCR이 숫자 3을 읽었을 때만 만들어지는 논리 클래스다.
+  class_name_map:
+    "2_class": "room2"
+    "3_class": "room3"
+    "4_class": "room4"
+    "logo": "logo"
+
+navigation:
+  class_groups:
+    sign: ["2_class", "3_class", "4_class"]
+  optional_detector_classes: ["3_class"]
 
 ocr:
   backend: easyocr
   lang: ["ko", "en"]
   min_confidence: 0.4
+  sign_classes: ["2_class", "3_class", "4_class"]
+  reject_room_types: ["회의실", "meeting"]
 
 localization:
   locations_file: configs/locations.yaml

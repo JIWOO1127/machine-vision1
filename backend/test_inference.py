@@ -14,7 +14,10 @@ NEW_MODEL_PATH = BASE_DIR / "models" / "faster_rcnn_916machine_4class_best.pt"
 LEGACY_MODEL_PATH = BASE_DIR / "models" / "faster_rcnn_916machine_best.pt"
 NUMBER_CLASSES = {"2_class", "4_class"}
 DOOR_CLASSES = {"front_door", "rear_door"}
-ALLOWED_CLASSES = NUMBER_CLASSES | DOOR_CLASSES
+# final_best.pt에는 logo도 포함되어 있다. 위치/길안내의 시작 기준점이므로
+# 다른 탐지 클래스와 마찬가지로 웹 API까지 전달해야 한다.
+LANDMARK_CLASSES = {"logo"}
+ALLOWED_CLASSES = NUMBER_CLASSES | DOOR_CLASSES | LANDMARK_CLASSES
 
 
 def load_model(weights_path: Path, device: torch.device):

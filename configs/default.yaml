@@ -15,14 +15,60 @@ detector:
   conf_threshold: 0.5
   class_name_map:
     "2_class": "room2"
+    "3_class": "room3"       # YOLO 직접 클래스가 없으면 OCR 결과가 이 논리 클래스를 만듦
     "4_class": "room4"
-  # room2/room4(YOLO 직접분류) + front_door/rear_door/water_dispenser. "sign" 없음 = OCR 미사용
-  target_classes: ["room2", "room4", "front_door", "rear_door", "water_dispenser"]
+    "logo": "logo"            # logo 포함 모델(final_best_v2 등)을 쓸 때 사용
+  # final_best.pt 실제 클래스: 2/4 표지판, 앞/뒷문, 정수기, logo.
+  target_classes: ["room2", "room4", "front_door", "rear_door", "water_dispenser", "logo"]
+
+# navigator.py와 ocr_verify.py의 공통 클래스 계약.
+# sign은 별도 YOLO 클래스가 아니라 2/3/4 표지판을 하나로 취급하는 논리 클래스다.
+# final_best.pt는 logo를 직접 탐지한다. 3_class는 OCR이 숫자 3을 읽었을 때만
+# 실제 탐지 입력으로 들어오는 논리 클래스다.
+navigation:
+  class_groups:
+    sign: ["2_class", "3_class", "4_class"]
+  optional_detector_classes: ["3_class"]
+  route:
+    - key: find_logo
+      target: logo
+      near_m: null
+      search_hint: "뒤로 천천히 도세요. 로고를 찾습니다"
+    - key: reach_wall
+      target: logo
+      near_m: 1.2
+      search_hint: "로고를 향해 직진하세요"
+      on_reach: "벽입니다. 왼쪽으로 돌아 벽을 따라 이동하세요"
+    - key: room4
+      target: sign
+      expected_class: "4_class"
+      near_m: 3.0
+      search_hint: "왼쪽 벽을 따라 이동하세요. 4강의실을 찾습니다"
+      on_reach: "4강의실 앞입니다. 계속 직진하세요"
+    - key: room3
+      target: sign
+      expected_class: "3_class"
+      near_m: 3.0
+      search_hint: "계속 벽을 따라 이동하세요. 3강의실을 지납니다"
+      on_reach: "3강의실 앞입니다. 계속 직진하세요"
+    - key: room2
+      target: sign
+      expected_class: "2_class"
+      near_m: 3.0
+      search_hint: "계속 벽을 따라 이동하세요. 2강의실을 찾습니다"
+      on_reach: "2강의실 앞입니다. 왼쪽으로 돌아 뒷문을 찾으세요"
+    - key: rear_door
+      target: rear_door
+      near_m: 3.0
+      search_hint: "왼쪽으로 돌아 뒷문을 찾으세요"
+      on_reach: "뒷문입니다. 목적지에 도착했습니다"
 
 ocr:
   backend: easyocr             # "easyocr" | "paddleocr" | "tesseract"
   lang: ["ko", "en"]
   min_confidence: 0.4
+  sign_classes: ["2_class", "3_class", "4_class"]
+  reject_room_types: ["회의실", "meeting"]
 
 localization:
   locations_file: configs/locations.yaml

@@ -15,9 +15,11 @@ detector:
   conf_threshold: 0.5
   class_name_map:
     "2_class": "room2"
+    "3_class": "room3"
     "4_class": "room4"
-  # room2/room4(YOLO 직접분류) + front_door/rear_door/water_dispenser. "sign" 없음 = OCR 미사용
-  target_classes: ["room2", "room4", "front_door", "rear_door", "water_dispenser"]
+    "logo": "logo"
+  # final_best.pt 실제 클래스에는 logo도 포함된다.
+  target_classes: ["room2", "room4", "front_door", "rear_door", "water_dispenser", "logo"]
 
 ocr:
   backend: easyocr             # "easyocr" | "paddleocr" | "tesseract"

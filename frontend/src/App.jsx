@@ -1,5 +1,53 @@
 import { useEffect, useRef, useState } from 'react'
 
+const INITIAL_GRID_POSITION = {
+  label: '위치 인식 중',
+  grid: { cols: 14, rows: 4 },
+  landmarks: [
+    { key: 'room4', label: '4강의실', grid_cell: [3, 0] },
+    { key: 'room3', label: '3강의실', grid_cell: [8, 0] },
+    { key: 'room2', label: '2강의실', grid_cell: [14, 0] },
+    { key: 'front_door', label: '앞문', grid_cell: [0, 4] },
+    { key: 'rear_door', label: '뒷문', grid_cell: [14, 4] },
+  ],
+}
+
+function GridMap({ position }) {
+  const mapPosition = position?.grid ? position : INITIAL_GRID_POSITION
+  const grid = mapPosition.grid
+  if (!grid?.cols || !grid?.rows) return null
+  const pointStyle = (cell) => ({
+    left: `${(cell[0] / grid.cols) * 100}%`,
+    top: `${100 - (cell[1] / grid.rows) * 100}%`,
+  })
+  return (
+    <section className="position-grid" aria-label="현재 위치 격자 지도">
+      <div className="position-grid-heading">
+        <span>현재 위치 지도</span>
+        <b>{mapPosition.label}</b>
+      </div>
+      <div
+        className="grid-map"
+        style={{ '--grid-cols': grid.cols, '--grid-rows': grid.rows }}
+      >
+        {mapPosition.landmarks?.map((landmark) => landmark.grid_cell && (
+          <div className="grid-landmark" style={pointStyle(landmark.grid_cell)} key={landmark.key}>
+            <i />
+            <span>{landmark.label}</span>
+          </div>
+        ))}
+        {mapPosition.current_cell && (
+          <div className="grid-current" style={pointStyle(mapPosition.current_cell)}>
+            <i />
+            <span>현재</span>
+          </div>
+        )}
+      </div>
+      {mapPosition.current_cell && <small>격자 좌표 · ({mapPosition.current_cell[0]}, {mapPosition.current_cell[1]})</small>}
+    </section>
+  )
+}
+
 function LivePanel({ cue, analyzing, playbackTime, processingMs, camera = false }) {
   const stability = cue?.stability
   const progressValue = stability
@@ -30,18 +78,22 @@ function LivePanel({ cue, analyzing, playbackTime, processingMs, camera = false 
 
       <div className="live-detail">
         <span>객체 {cue?.detections?.length ? cue.detections.join(' · ') : '탐지 없음'}</span>
+        {cue?.position?.description && <span>기준 위치 · {cue.position.description}</span>}
+        {cue?.navigation?.target && <span>안내 단계 · {cue.navigation.target} 찾기</span>}
         {/* {cue?.location?.motion && <span>움직임 {cue.location.motion}</span>} */}
       </div>
 
+      <GridMap position={cue?.position} />
 
-      <div class="bottom-grid">
+
+      <div className="bottom-grid">
                   {/* {stability && !stability.confirmed && (
           <div className="stability-progress">
             <span style={{ width: `${Math.min(100, progressValue * 100)}%` }} />
           </div>
         )} */}
         <strong className="live-guidance">
-          {cue?.guidance || '영상을 재생하면 현재 화면의 거리와 위치를 바로 알려드려요.'}
+          {cue?.command || cue?.guidance || '영상을 재생하면 현재 화면의 거리와 위치를 바로 알려드려요.'}
         </strong>
       </div>
       
@@ -104,11 +156,12 @@ export default function App() {
     const locationKey = liveCue.location?.status === 'localized'
       ? liveCue.location.label
       : liveCue.location?.status || 'unknown'
-    const speechKey = [liveCue.detections?.[0], landmark?.state, locationKey].join('|')
+    const speechText = liveCue.command || liveCue.guidance
+    const speechKey = [liveCue.detections?.[0], landmark?.state, locationKey, speechText].join('|')
     const now = Date.now()
     if (speechKey === lastSpokenKeyRef.current && now - lastSpokenAtRef.current < 5000) return
 
-    const utterance = new SpeechSynthesisUtterance(liveCue.guidance)
+    const utterance = new SpeechSynthesisUtterance(speechText)
     utterance.lang = 'ko-KR'
     utterance.rate = 1
     utterance.pitch = 1
@@ -143,6 +196,18 @@ export default function App() {
     streamTokenRef.current += 1
     if (liveTimerRef.current) window.clearInterval(liveTimerRef.current)
     if (speechSupported) window.speechSynthesis.cancel()
+  }
+
+  const resetLiveTracking = () => {
+    // 영상 재생 위치를 옮기면 이전 구간의 거리/다수결/격자 점은 사용할 수 없다.
+    // 지도 자체는 계속 보이되, 새 구간에서 탐지될 때까지 현재 위치 점만 비운다.
+    streamTokenRef.current += 1
+    inFlightFramesRef.current = 0
+    frameSequenceRef.current = 0
+    displayedSequenceRef.current = 0
+    setLiveCue(null)
+    setLiveProcessingMs(0)
+    return fetch('/api/reset-tracking', { method: 'POST' }).catch(() => {})
   }
 
   const startCamera = async () => {
@@ -182,7 +247,7 @@ export default function App() {
       frameSequenceRef.current = 0
       displayedSequenceRef.current = 0
       streamTokenRef.current += 1
-      fetch('/api/reset-tracking', { method: 'POST' }).catch(() => {})
+      resetLiveTracking()
     } catch (err) {
       const message = err?.name === 'NotAllowedError'
         ? '카메라 권한이 거부되었습니다. 브라우저 주소창의 카메라 권한을 허용해 주세요.'
@@ -212,7 +277,7 @@ export default function App() {
     if (liveTimerRef.current) window.clearInterval(liveTimerRef.current)
     setError('')
     if (next.type.startsWith('video/')) {
-      fetch('/api/reset-tracking', { method: 'POST' }).catch(() => {})
+      resetLiveTracking()
     }
   }
 
@@ -395,6 +460,7 @@ export default function App() {
                   onPlay={(event) => startLiveAnalysis(event.currentTarget)}
                   onPause={() => liveTimerRef.current && window.clearInterval(liveTimerRef.current)}
                   onTimeUpdate={(event) => setPlaybackTime(event.currentTarget.currentTime)}
+                  onSeeking={() => resetLiveTracking()}
                   onSeeked={(event) => {
                     setPlaybackTime(event.currentTarget.currentTime)
                     if (!event.currentTarget.paused) analyzePlayingFrame(event.currentTarget)
