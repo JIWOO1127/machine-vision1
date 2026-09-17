@@ -1,3 +1,5 @@
+import hmac
+import os
 from pathlib import Path
 from time import perf_counter
 from uuid import uuid4
@@ -14,6 +16,7 @@ for directory in (UPLOAD_DIR, RESULT_DIR, DATA_DIR):
     directory.mkdir(exist_ok=True)
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "bmp"}
 ALLOWED_VIDEO_EXTENSIONS = {"mp4", "mov", "avi", "mkv", "webm", "m4v"}
+DEMO_ACCESS_KEY = os.environ.get("DEMO_ACCESS_KEY", "").strip()
 
 
 def create_app():
@@ -27,12 +30,45 @@ def create_app():
     vision = VisionEngine(RESULT_DIR)
     locations = LocationStore(DATA_DIR / "locations.json")
 
+    def is_quick_tunnel_request():
+        hostname = request.host.split(":", 1)[0].lower()
+        return hostname.endswith(".trycloudflare.com")
+
+    @app.before_request
+    def protect_quick_tunnel():
+        if not DEMO_ACCESS_KEY or not is_quick_tunnel_request():
+            return None
+        provided = request.args.get("key", "") or request.cookies.get(
+            "demo_access", ""
+        )
+        if hmac.compare_digest(provided, DEMO_ACCESS_KEY):
+            return None
+        return jsonify(error="유효한 시연 접속 키가 필요합니다."), 403
+
+    @app.after_request
+    def remember_quick_tunnel_key(response):
+        provided = request.args.get("key", "")
+        if (
+            DEMO_ACCESS_KEY
+            and is_quick_tunnel_request()
+            and hmac.compare_digest(provided, DEMO_ACCESS_KEY)
+        ):
+            response.set_cookie(
+                "demo_access",
+                DEMO_ACCESS_KEY,
+                secure=True,
+                httponly=True,
+                samesite="Lax",
+            )
+        return response
+
     @app.get("/api/health")
     def health():
         return {
-            "status": "ok" if vision.model_ready and vision.ocr_ready else "degraded",
+            "status": "ok" if vision.model_ready else "degraded",
             "model_ready": vision.model_ready,
             "ocr_ready": vision.ocr_ready,
+            "ocr_enabled": False,
             "device": str(vision.device),
             "model": vision.model_kind,
             "weights": vision.model_path.name,
@@ -69,7 +105,7 @@ def create_app():
                        annotated_image_url=(f"/api/results/{output['result_name']}" if output["result_name"] else None),
                        model=output.get("model"), weights=output.get("weights"),
                        device=output.get("device"),
-                       model_ready=vision.model_ready and vision.ocr_ready,
+                       model_ready=vision.model_ready,
                        processing_ms=round((perf_counter() - started) * 1000))
 
     @app.post("/api/analyze-video")
@@ -106,7 +142,30 @@ def create_app():
             model=output.get("model"),
             weights=output.get("weights"),
             device=output.get("device"),
-            model_ready=vision.model_ready and vision.ocr_ready,
+            model_ready=vision.model_ready,
+            processing_ms=round((perf_counter() - started) * 1000),
+        )
+
+    @app.post("/api/reset-tracking")
+    def reset_tracking():
+        vision.reset_tracking()
+        return jsonify(status="ok")
+
+    @app.post("/api/analyze-frame")
+    def analyze_frame():
+        started = perf_counter()
+        frame = request.files.get("frame")
+        if not frame:
+            return jsonify(error="분석할 영상 프레임이 필요합니다."), 400
+        try:
+            time_seconds = max(0.0, float(request.form.get("time_seconds", 0.0)))
+            output = vision.analyze_frame_bytes(frame.read(), time_seconds)
+        except ValueError as exc:
+            return jsonify(error=str(exc)), 400
+        except Exception as exc:
+            return jsonify(error=f"재생 프레임 분석 중 오류가 발생했습니다: {exc}"), 500
+        return jsonify(
+            **output,
             processing_ms=round((perf_counter() - started) * 1000),
         )
 

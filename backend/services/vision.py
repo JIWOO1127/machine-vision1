@@ -4,19 +4,20 @@ import os
 from pathlib import Path
 import subprocess
 from threading import Lock
+from collections import Counter, deque
 
 import cv2
 import numpy as np
 import torch
 from PIL import Image, ImageOps
 
-from services.ocr import PaddleOCREngine, draw_ocr_results
+from services.ocr import draw_ocr_results
 from services.visual_localization import VisualLocationEstimator, draw_location_overlay
 from test_inference import draw_detections, load_model
 
 
 class VisionEngine:
-    """Server-side Faster R-CNN + targeted PaddleOCR inference."""
+    """Server-side YOLO object detection and visual localization."""
 
     def __init__(self, result_dir: Path):
         self.result_dir = result_dir
@@ -30,6 +31,13 @@ class VisionEngine:
         self.model_path = self._choose_model_path()
         self.location_estimator = None
         self.location_frame_width = None
+        self.live_label_history = deque(maxlen=5)
+        self.live_observation_history = deque(maxlen=5)
+        self.live_cached_source_label = None
+        self.live_cached_ocr_readings = []
+        self.live_cached_observation = None
+        self.live_confirmed_frame_count = 0
+        self.live_cached_location = None
         self.lock = Lock()
         self.load_error = None
         self._load_models()
@@ -64,9 +72,16 @@ class VisionEngine:
             else:
                 self.model, self.class_names = load_model(self.model_path, self.device)
                 self.model_kind = "Faster R-CNN"
-            # PaddlePaddle on this Windows environment is CPU-only. Faster
-            # R-CNN still runs on CUDA when available.
-            self.ocr = PaddleOCREngine(device="cpu")
+            # Pay one-time framework initialization during server startup so
+            # the first phone frame is not delayed by CUDA warm-up.
+            if self.model_kind == "YOLOv8":
+                self.model.predict(
+                    np.zeros((640, 640, 3), dtype=np.uint8),
+                    imgsz=640,
+                    conf=0.05,
+                    device=0 if self.device.type == "cuda" else "cpu",
+                    verbose=False,
+                )
         except Exception as exc:
             self.load_error = str(exc)
             self.model = None
@@ -83,7 +98,20 @@ class VisionEngine:
 
     @property
     def ocr_ready(self):
-        return self.ocr is not None
+        return False
+
+    def reset_tracking(self):
+        """Reset temporal localization before a new phone video starts."""
+        with self.lock:
+            self.location_estimator = None
+            self.location_frame_width = None
+            self.live_label_history.clear()
+            self.live_observation_history.clear()
+            self.live_cached_source_label = None
+            self.live_cached_ocr_readings = []
+            self.live_cached_observation = None
+            self.live_confirmed_frame_count = 0
+            self.live_cached_location = None
 
     @staticmethod
     def _read_phone_image(image_path: Path):
@@ -105,8 +133,7 @@ class VisionEngine:
             self.location_frame_width = frame_width
         return self.location_estimator
 
-    def _infer_frame(self, clean_image, estimator):
-        image = clean_image.copy()
+    def _predict_frame(self, clean_image):
         if self.model_kind == "YOLOv8":
             yolo_result = self.model.predict(
                 clean_image,
@@ -133,6 +160,11 @@ class VisionEngine:
             with torch.inference_mode():
                 output = self.model([tensor])[0]
 
+        return output
+
+    def _apply_detection_rules(self, clean_image, output, ocr_engine):
+        image = clean_image.copy()
+
         stats = draw_detections(
             image,
             clean_image,
@@ -141,20 +173,22 @@ class VisionEngine:
             confidence=0.30,
             number_confidence=0.10,
             door_confidence=0.65,
-            ocr_engine=self.ocr,
+            ocr_engine=ocr_engine,
             ocr_confidence=0.25,
         )
         if stats["ocr_events"]:
             image = draw_ocr_results(image, stats["ocr_events"], draw_boxes=False)
+        return image, stats
+
+    def _infer_frame(self, clean_image, estimator):
+        output = self._predict_frame(clean_image)
+        image, stats = self._apply_detection_rules(clean_image, output, None)
         location = estimator.update(clean_image, stats["observations"])
         return draw_location_overlay(image, location), stats, location
 
     def analyze(self, image_path: Path, image_id: str):
         if not self.model_ready:
             raise RuntimeError(self.load_error or "Faster R-CNN model is not ready")
-        if not self.ocr_ready:
-            raise RuntimeError(self.load_error or "PaddleOCR is not ready")
-
         with self.lock:
             clean_image = self._read_phone_image(image_path)
             estimator = self._get_location_estimator(clean_image.shape[1])
@@ -192,6 +226,135 @@ class VisionEngine:
                 "weights": self.model_path.name,
                 "device": str(self.device),
             }
+
+    def analyze_frame_bytes(self, payload: bytes, time_seconds: float = 0.0):
+        """Publish the 4-vote majority from a sliding window of 5 live frames."""
+        if not self.model_ready:
+            raise RuntimeError(self.load_error or "객체 탐지 모델이 준비되지 않았습니다.")
+        encoded = np.frombuffer(payload, dtype=np.uint8)
+        clean_image = cv2.imdecode(encoded, cv2.IMREAD_COLOR)
+        if clean_image is None:
+            raise ValueError("재생 중인 영상 프레임을 읽을 수 없습니다.")
+
+        with self.lock:
+            estimator = self._get_location_estimator(clean_image.shape[1])
+            output = self._predict_frame(clean_image)
+            _, raw_stats = self._apply_detection_rules(clean_image, output, None)
+            representative = max(
+                raw_stats["observations"],
+                key=lambda item: item.get("area", 0),
+                default=None,
+            )
+            current_label = representative["label"] if representative else None
+            self.live_label_history.append(current_label)
+            self.live_observation_history.append(
+                dict(representative) if representative else None
+            )
+            votes = Counter(
+                label for label in self.live_label_history if label is not None
+            )
+            stable_label, vote_count = (
+                votes.most_common(1)[0] if votes else (None, 0)
+            )
+            confirmed = (
+                len(self.live_label_history) == self.live_label_history.maxlen
+                and stable_label is not None
+                and vote_count >= 4
+            )
+            stable_observation = next(
+                (
+                    observation
+                    for label, observation in zip(
+                        reversed(self.live_label_history),
+                        reversed(self.live_observation_history),
+                    )
+                    if label == stable_label and observation is not None
+                ),
+                None,
+            )
+
+            if not confirmed:
+                self.live_confirmed_frame_count = 0
+                self.live_cached_location = None
+                if stable_label != self.live_cached_source_label:
+                    self.live_cached_source_label = None
+                    self.live_cached_ocr_readings = []
+                    self.live_cached_observation = None
+                collected = len(self.live_label_history)
+                location = {
+                    "status": "confirming",
+                    "label": "객체 확인 중",
+                    "detail": (
+                        f"최근 프레임 수집 {collected}/5"
+                        if collected < 5
+                        else f"최근 5프레임 중 최다 객체 {vote_count}/4"
+                    ),
+                    "confidence": 0.0,
+                    "motion": "",
+                    "candidates": [],
+                }
+                stats = {"observations": [], "ocr_readings": []}
+            else:
+                stats = {
+                    "observations": [stable_observation],
+                    "ocr_readings": [],
+                }
+
+            if confirmed:
+                self.live_confirmed_frame_count += 1
+                if (
+                    self.live_cached_location is None
+                    or self.live_confirmed_frame_count % 5 == 0
+                ):
+                    location = estimator.update(clean_image, stats["observations"])
+                    self.live_cached_location = dict(location)
+                else:
+                    location = dict(self.live_cached_location)
+                    measurements = estimator._measurements(stats["observations"])
+                    location["measurements"] = [
+                        {
+                            "anchor": item["config"]["map_key"],
+                            "distance_mm": round(item["distance_mm"]),
+                            "height_distance_mm": round(item["height_distance_mm"]),
+                            "width_distance_mm": round(item["width_distance_mm"]),
+                            "bearing_deg": round(item["bearing_deg"], 1),
+                            "calibrated": item["calibrated"],
+                        }
+                        for item in measurements
+                    ]
+
+        detections = [
+            self._display_detection(item) for item in stats["observations"]
+        ]
+        texts = [self._display_reading(item) for item in stats["ocr_readings"]]
+        cue = self._video_timeline_cue(time_seconds, stats, location)
+        cue["stability"] = {
+            "confirmed": confirmed,
+            "count": vote_count,
+            "required": 4,
+            "collected": len(self.live_label_history),
+            "window": 5,
+            "target_fps": 5,
+        }
+        if not confirmed:
+            if len(self.live_label_history) < 5:
+                cue["guidance"] = (
+                    f"판단할 프레임을 모으는 중입니다 "
+                    f"({len(self.live_label_history)}/5)"
+                )
+            else:
+                cue["guidance"] = (
+                    f"같은 객체가 4번 잡히는지 확인 중입니다 ({vote_count}/4)"
+                )
+        return {
+            "detections": detections,
+            "texts": texts,
+            "location": location,
+            "cue": cue,
+            "model": self.model_kind,
+            "weights": self.model_path.name,
+            "device": str(self.device),
+        }
 
     @staticmethod
     def _display_detection(item):
@@ -278,10 +441,15 @@ class VisionEngine:
         }
         if landmarks:
             nearest = landmarks[0]
+            location_label = location_summary["label"]
+            location_heading = "추정 위치"
+            if location_summary["status"] == "candidates":
+                location_heading = "현재 위치 후보"
+                location_label = location_label.removeprefix("후보: ")
             guidance = (
-                f"{nearest['direction']} 약 {nearest['distance_m']:.1f}m에 "
-                f"{nearest['name']}이(가) 보입니다. "
-                f"현재 위치는 {location_summary['label']}로 추정됩니다."
+                f"{nearest['direction']} 약 {nearest['distance_m']:.1f}m에서 "
+                f"{nearest['name']}이 보입니다. "
+                f"{location_heading}: {location_label}."
             )
         else:
             guidance = "이 구간에서는 위치를 판단할 기준 객체가 보이지 않습니다."
@@ -298,9 +466,6 @@ class VisionEngine:
     def analyze_video(self, video_path: Path, video_id: str, frame_step: int = 5):
         if not self.model_ready:
             raise RuntimeError(self.load_error or "Faster R-CNN model is not ready")
-        if not self.ocr_ready:
-            raise RuntimeError(self.load_error or "PaddleOCR is not ready")
-
         frame_step = max(1, min(int(frame_step), 30))
         raw_path = self.result_dir / f"{video_id}_raw.mp4"
         result_path = self.result_dir / f"{video_id}.mp4"
