@@ -1,0 +1,4 @@
+Flask>=3.0,<4
+flask-cors>=5.0,<6
+imageio-ffmpeg>=0.5,<1
+ultralytics>=8.3,<9

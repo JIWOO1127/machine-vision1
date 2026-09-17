@@ -1,0 +1,19 @@
+{
+  "settings_version": "0.0.8",
+  "datasets_dir": "C:\\Users\\\ud55c\uad6d\uc804\ud30c\uc9c4\ud765\ud611\ud68c\\workspace\\datasets",
+  "weights_dir": "C:\\Users\\\ud55c\uad6d\uc804\ud30c\uc9c4\ud765\ud611\ud68c\\workspace\\machine-vision1\\weights",
+  "runs_dir": "C:\\Users\\\ud55c\uad6d\uc804\ud30c\uc9c4\ud765\ud611\ud68c\\workspace\\machine-vision1\\runs",
+  "uuid": "e814d2c135ee9001e8aa3152c09138a78c5c835babfffe11213a99a014827bef",
+  "sync": true,
+  "api_key": "",
+  "openai_api_key": "",
+  "clearml": true,
+  "comet": true,
+  "dvc": true,
+  "mlflow": true,
+  "raytune": true,
+  "tensorboard": false,
+  "wandb": false,
+  "vscode_msg": true,
+  "openvino_msg": true
+}

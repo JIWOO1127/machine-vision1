@@ -38,6 +38,16 @@ pnpm-debug.log*
 runs/
 wandb/
 
+# Local training datasets and exported dataset archives
+backend/*.yolov8/
+backend/*.zip
+backend/annotations/
+datasets/
+
+# Local test inputs and generated evaluation artifacts
+backend/tests/input/
+backend/tests/output/
+
 # Runtime uploads and generated results
 backend/uploads/*
 !backend/uploads/.gitkeep

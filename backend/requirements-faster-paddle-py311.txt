@@ -1,0 +1,14 @@
+--extra-index-url https://download.pytorch.org/whl/cu132
+
+torch==2.13.0+cu132
+torchvision==0.28.0+cu132
+paddlepaddle==3.2.2
+paddleocr==3.7.0
+numpy==2.3.5
+opencv-contrib-python==4.10.0.84
+Pillow==12.3.0
+pycocotools==2.0.11
+Flask>=3.0,<4
+flask-cors>=5.0,<6
+imageio-ffmpeg>=0.5,<1
+ultralytics>=8.3,<9
