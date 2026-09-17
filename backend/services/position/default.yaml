@@ -1,0 +1,54 @@
+# classroom-locator 전역 설정
+# 2026-09-17: OCR 완전 배제 결정. room2/room4까지 YOLO가 이미지만으로 직접
+# 분류하는 방식으로 전환 (test_sample 평가에서 OCR 방식보다 훨씬 안정적임을
+# 확인함 - docs/setup_log.md 14~15번 참고). ocr 섹션은 target_classes에
+# "sign"이 없으면 자동으로 초기화 자체를 건너뜀 (core.py 참고).
+#
+# final_best.pt로 교체함 (best_yolo_only.pt보다 test_sample 평가에서 더
+# 좋았음 - Macro F1 0.850 vs 0.821, docs/setup_log.md 15번 참고). 이 모델은
+# 클래스 이름이 "2_class"/"4_class" 그대로라서 class_name_map으로
+# room2/room4로 바꿔치기함.
+
+detector:
+  backend: ultralytics        # "ultralytics" | "yolov5"
+  weights: models/yolo/final_best.pt
+  conf_threshold: 0.5
+  class_name_map:
+    "2_class": "room2"
+    "4_class": "room4"
+  # room2/room4(YOLO 직접분류) + front_door/rear_door/water_dispenser. "sign" 없음 = OCR 미사용
+  target_classes: ["room2", "room4", "front_door", "rear_door", "water_dispenser"]
+
+ocr:
+  backend: easyocr             # "easyocr" | "paddleocr" | "tesseract"
+  lang: ["ko", "en"]
+  min_confidence: 0.4
+
+localization:
+  locations_file: configs/locations.yaml
+  # OCR 텍스트와 위치 이름을 비교할 때 허용할 최소 유사도 (0~100, rapidfuzz 기준)
+  # 실제 영상에서 OCR이 "실"을 "신"으로 오인식하는 등 노이즈가 있어 70은 너무 엄격해서 55로 낮춤
+  match_threshold: 55
+
+pipeline:
+  # 배치 모드에서 처리할 이미지 확장자
+  image_extensions: [".jpg", ".jpeg", ".png"]
+  # 결과 저장 위치
+  output_dir: outputs/results
+  save_annotated_image: true
+
+realtime:
+  camera_index: 0
+  frame_width: 1280
+  frame_height: 720
+  # N 프레임마다 한 번씩만 탐지/OCR 수행 (성능을 위해)
+  process_every_n_frames: 5
+  # 위치가 바뀔 때마다 그 순간 화면을 outputs/results/realtime_snapshots/에 저장.
+  # 실행할 때 --snapshot / --no-snapshot 으로도 덮어쓸 수 있음.
+  save_snapshots: true
+  # 격자 지도(현재 위치) 창 표시 여부. --grid-map / --no-grid-map 으로도 덮어쓸 수 있음.
+  show_grid_map: true
+
+logging:
+  level: INFO
+  log_dir: outputs/logs

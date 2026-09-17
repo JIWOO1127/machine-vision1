@@ -1,0 +1,117 @@
+# "표지판 텍스트 → 위치" 매핑 데이터
+#
+# name         : 표지판에 실제로 적혀 있는 텍스트 (OCR이 인식할 것으로 예상되는 문자열)
+# aliases      : name과 유사하게 인식될 수 있는 다른 표현들 (OCR 오인식 대비)
+# building     : 건물명
+# floor        : 층
+# description  : 사람이 이해하기 쉬운 위치 설명
+# coords       : (선택) 실내 좌표계를 쓴다면 x, y 등 자유롭게 정의
+# grid_cell / snap_distance_m : GridPositionTracker(격자 지도) 방식에서 사용.
+#   이 물체가 snap_distance_m(m) 이내로 탐지되면, 계산된 거리와 가장 가까운
+#   격자점(grid_cell 기준 거리)으로 현재 위치를 갱신함.
+#   grid_cell은 "칸(cell) 번호"가 아니라 격자 교차점(코너) 좌표 (x, y),
+#   왼쪽 아래가 원점(0,0), x: 0~cols, y: 0~rows.
+
+# 격자 지도 설정: 가로 14칸 x 세로 4칸, 한 칸 = 1.8m
+# (좌회전/우회전만 있고 대각선 이동은 없는 시연 경로 전용)
+grid:
+  cols: 14
+  rows: 4
+  cell_size_m: 1.8
+
+locations:
+  # 일자형 복도, 4강의실 - 3강의실 - 2강의실 순서.
+  # name은 YOLO 클래스명(room2/room3/room4)과 동일하게 맞춰서, 탐지 클래스로
+  # 바로 위치를 조회할 수 있게 합니다. 실제 표지판 텍스트는 aliases에 넣어서
+  # OCR 매칭에도 쓸 수 있게 해뒀습니다.
+  # coords의 x는 위 grid(cols: 14)와 같은 범위(0~14)로 맞춰서 씁니다 —
+  # coords 자체는 scripts/visualize_map.py 전용이라 실시간 격자 지도
+  # (SeojiwooGridPositionTracker/grid_cell)와는 별개지만, 헷갈리지 않게
+  # 같은 x축 최대값(14)을 씁니다.
+  - name: "room4"
+    aliases: ["4강의실", "4호"]
+    building: null
+    floor: null
+    description: "복도 시작 지점"
+    display_name: "4강의실"
+    guidance: "앞으로 쭉 직진하세요."
+    coords: { x: 0, y: 0 }
+    grid_cell: [3, 0]
+    snap_distance_m: 2.5
+
+  - name: "room3"
+    aliases: ["3강의실", "3호"]
+    building: null
+    floor: null
+    description: "복도 중간"
+    display_name: "3강의실"
+    guidance: "앞으로 쭉 직진하세요."
+    coords: { x: 8, y: 0 }
+    # 3강의실은 YOLO 클래스가 따로 없음(모델이 2_class/4_class로만 오분류함).
+    # SeojiwooGridPositionTracker가 표지판 글자를 OCR로 직접 읽어서 "3"이면
+    # 이 위치로 정정함 (grid_tracker.py의 _read_sign_digit 참고).
+    grid_cell: [8, 0]
+    snap_distance_m: 2.5
+
+  - name: "room2"
+    aliases: ["2강의실", "2호"]
+    building: null
+    floor: null
+    description: "복도 끝 지점"
+    display_name: "2강의실"
+    guidance: "왼쪽으로 가세요."
+    coords: { x: 14, y: 0 }
+    grid_cell: [14, 0]
+    snap_distance_m: 2.5
+
+  # 앞문/뒷문/정수기/로고: 글자가 없는 물체라 OCR이 아니라 YOLO가 이미지 자체를
+  # 각 클래스로 직접 분류합니다. name이 YOLO 클래스명과 정확히 같아야
+  # 바로 조회됩니다 (room2/3/4처럼 OCR 별칭 매칭용이 아님).
+  # logo는 final_best.pt(5클래스)엔 없고 final_best_v2_with_logo.pt(6클래스)
+  # 에만 있는 클래스 - SeojiwooGridPositionTracker가 logo_weights로 별도
+  # 모델을 같이 돌려서 인식함 (realtime_pipeline.py 참고).
+  - name: "logo"
+    aliases: []
+    building: null
+    floor: null
+    description: "복도 진입 전 정면 로고 벽 (시연 시작 기준점)"
+    display_name: "로고"
+    guidance: null
+    grid_cell: [0, 0]
+    snap_distance_m: 3.0
+
+  - name: "front_door"
+    aliases: []
+    building: null
+    floor: null
+    description: "앞문 위치"
+    display_name: "앞문"
+    guidance: null
+    coords: { x: -2, y: 5 }
+    grid_cell: [0, 4]
+    snap_distance_m: 3.0
+
+  - name: "rear_door"
+    aliases: []
+    building: null
+    floor: null
+    description: "뒷문 위치"
+    display_name: "뒷문"
+    guidance: null
+    coords: { x: 14, y: 5 }
+    grid_cell: [14, 4]
+    snap_distance_m: 3.0
+
+  - name: "water_dispenser"
+    aliases: []
+    building: null
+    floor: null
+    description: "정수기 위치"
+    display_name: "정수기"
+    guidance: null
+    coords: { x: 5, y: 3 }
+
+  # 실제 강의실 표지판 촬영 데이터를 확보하면 아래처럼 계속 추가하세요.
+  # - name: "room5"
+  #   aliases: ["5강의실"]
+  #   coords: { x: -8, y: 0 }
