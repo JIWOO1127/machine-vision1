@@ -14,6 +14,10 @@ venv/
 node_modules/
 webapp/frontend/dist/
 
+# cloudflared 실행 파일 (외부 다운로드 도구, ~50MB - 필요하면 각자 받아서
+# webapp/backend/.tools/cloudflared.exe에 두면 됨)
+webapp/backend/.tools/
+
 # Flask 백엔드가 요청마다 만드는 분석 결과 이미지
 webapp/backend/results/*
 !webapp/backend/results/.gitkeep

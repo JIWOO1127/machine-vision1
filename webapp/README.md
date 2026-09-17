@@ -5,8 +5,8 @@
 그 저장소의 Flask 서버(`backend/app.py`)와 같은 API 모양(`/api/health`,
 `/api/analyze`, `/api/analyze-frame`, `/api/reset-tracking`, ...)을 따르지만,
 `webapp/backend/`에 새로 작성했고 실제 판정은 전부 이 프로젝트의
-`classroom_locator.pipeline.SeojiwooGridPositionTracker`(=
-`external/seojiwoo_core` Locator 이식 + 3강의실 OCR 정정 + 격자 스냅)를
+`classroom_locator.pipeline.LandmarkGridPositionTracker`(=
+`classroom_locator.landmark_locator` Locator 이식 + 3강의실 OCR 정정 + 격자 스냅)를
 그대로 사용합니다.
 
 ## 구성
@@ -15,7 +15,7 @@
 webapp/
   backend/
     app.py            # Flask 서버 (라우트만 담당)
-    vision_bridge.py   # 우리 SeojiwooGridPositionTracker <-> 프론트가 기대하는 JSON 모양 변환
+    vision_bridge.py   # 우리 LandmarkGridPositionTracker <-> 프론트가 기대하는 JSON 모양 변환
     requirements.txt   # Flask, flask-cors만 추가 (나머지는 프로젝트 루트 requirements.txt)
     results/           # 분석 결과 이미지 저장 (/api/results/<파일명>로 서빙)
   frontend/             # machine-vision1/frontend를 그대로 복사 (수정 없음)
@@ -74,7 +74,7 @@ npm run build
 
 - 사진 1장(`/api/analyze`)은 프레임 투표(temporal smoothing)가 의미 없어서
   `window=1, min_votes=1, approach_only=False`로 설정한 별도
-  `SeojiwooGridPositionTracker`(`photo_tracker`)를 씀 — 그 한 장만 보고 바로
+  `LandmarkGridPositionTracker`(`photo_tracker`)를 씀 — 그 한 장만 보고 바로
   판정.
 - 실시간 카메라(`/api/analyze-frame`)는 `realtime_pipeline.py`와 동일한
   기본값(최근 5프레임 중 4표, 접근추세 확인, 3강의실 OCR 정정)의
@@ -82,7 +82,7 @@ npm run build
   (초당 5프레임) 프레임을 보내는 구조라 원본 저장소의 5프레임 다수결 설계와
   정확히 맞아떨어짐.
 - `location.candidates`/`landmarks`의 방향("왼쪽"/"오른쪽"/"앞쪽")은
-  bbox 중심의 화면 내 위치로 계산 (`external/seojiwoo_core/navigator.py`의
+  bbox 중심의 화면 내 위치로 계산 (`classroom_locator/landmark_locator/navigator.py`의
   좌/우 판정 임계값 0.35/0.65와 동일).
 
 ## 안 된 것 (필요하면 추가 요청)

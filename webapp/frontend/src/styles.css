@@ -17,7 +17,7 @@ body {
 }
 
 .app-shell {
-    width: min(100%, 560px);
+    width: 80%;
     margin: auto;
     padding: 42px 18px 28px
 }
@@ -392,7 +392,8 @@ footer {
     padding: 13px 15px 15px;
     display: flex;
     flex-direction: column;
-    gap: 5px;
+    /* gap: 5px; */
+    gap: 10px;
     background: #101716;
     color: #fff
 }
@@ -427,7 +428,16 @@ footer {
     gap: 12px;
     padding: 10px 0;
     border-top: 1px solid #263330;
-    border-bottom: 1px solid #263330
+    border-bottom: 1px solid #263330;
+
+
+
+    height: 3rem;
+    overflow: hidden;
+    white-space: nowrap;
+
+
+
 }
 
 .live-location-row span {
@@ -718,4 +728,834 @@ footer {
     footer {
         padding: 0 18px
     }
+}
+
+/* ========================================
+   새로운 모바일 UI
+   ======================================== */
+
+@media (max-width: 640px) {
+
+    .app-shell {
+        width: 100%;
+        min-height: 100dvh;
+        padding: 0;
+        background: #f4f7f6;
+    }
+
+    /* 상단 영역 작게 */
+    header {
+        margin: 0;
+        padding: calc(12px + env(safe-area-inset-top)) 16px 12px;
+    }
+
+    h1 {
+        font-size: 22px;
+        margin: 5px 0 4px;
+    }
+
+    header p {
+        font-size: 12px;
+        line-height: 1.35;
+    }
+
+    .server-line {
+        font-size: 10px;
+    }
+
+    /* 카메라 영역 */
+    .capture-card {
+        padding: 0;
+        border: 0;
+        background: #000;
+    }
+
+    .preview-wrap {
+        border-radius: 0;
+        background: #000;
+    }
+
+    .camera-preview video {
+        width: 100%;
+        height: 55dvh;
+        max-height: none;
+        object-fit: cover;
+    }
+
+    .camera-live-badge {
+        top: 10px;
+        left: 10px;
+        font-size: 9px;
+        padding: 5px 8px;
+    }
+
+    /* 분석 결과 영역 고정 */
+    .live-caption {
+        height: 180px;
+        min-height: 180px;
+        max-height: 180px;
+        padding: 12px 14px;
+
+        background: #101716;
+        color: white;
+
+        /* overflow-y: auto; */
+        overscroll-behavior: contain;
+    }
+
+    .live-caption strong {
+        font-size: 16px;
+        line-height: 1.3;
+    }
+
+    .live-caption span {
+        font-size: 12px;
+    }
+
+    .caption-time {
+        font-size: 10px;
+    }
+
+    /* 위치 */
+    .live-location-row {
+        padding: 7px 0;
+        gap: 8px;
+    }
+
+    .live-location-row b {
+        font-size: 13px;
+    }
+
+    /* 탐지 목록 */
+    .live-landmarks {
+        gap: 4px;
+    }
+
+    .live-landmark {
+        padding: 7px 9px;
+        gap: 6px;
+    }
+
+    .live-landmark span {
+        font-size: 12px;
+    }
+
+    .live-landmark b {
+        font-size: 13px;
+    }
+
+    .live-landmark em {
+        font-size: 9px;
+        padding: 2px 5px;
+    }
+
+    /* 상세 설명 */
+    .live-detail {
+        margin-top: 3px;
+        gap: 2px;
+    }
+
+    .live-detail span {
+        font-size: 11px;
+        line-height: 1.3;
+    }
+
+    /* 퍼센트 바 제거 */
+    .stability-progress {
+        display: none !important;
+    }
+
+    /* 버튼 */
+    .actions {
+        position: static;
+        margin: 0;
+        padding: 10px 14px;
+        background: white;
+    }
+
+    .actions button {
+        height: 48px;
+        border-radius: 12px;
+        font-size: 14px;
+    }
+
+    .voice-toggle {
+        margin-top: 8px;
+        padding: 8px 11px;
+        font-size: 12px;
+    }
+
+    .result-card {
+        margin-top: 8px;
+        padding: 14px;
+    }
+}
+
+/* 모바일은 가로 전용: 세로일 때 회전 안내만 표시 */
+.orientation-gate {
+    display: none;
+}
+
+@media (max-width: 900px) and (orientation: portrait) {
+    body {
+        overflow: hidden;
+    }
+
+    .orientation-gate {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        padding: 28px;
+        text-align: center;
+        background: radial-gradient(circle at 50% 35%, #154c42 0, #071815 58%);
+        color: #fff;
+    }
+
+    .orientation-gate strong {
+        font-size: 24px;
+        line-height: 1.3;
+    }
+
+    .orientation-gate p {
+        max-width: 290px;
+        margin: 0;
+        color: #b9d3cc;
+        font-size: 14px;
+        line-height: 1.55;
+    }
+
+    .rotate-phone {
+        position: relative;
+        width: 54px;
+        height: 92px;
+        margin-bottom: 15px;
+        border: 4px solid #68dfbd;
+        border-radius: 12px;
+        animation: rotate-phone 2.2s ease-in-out infinite;
+    }
+
+    .rotate-phone span {
+        position: absolute;
+        left: 50%;
+        bottom: 5px;
+        width: 14px;
+        height: 3px;
+        border-radius: 3px;
+        background: #68dfbd;
+        transform: translateX(-50%);
+    }
+
+    .rotate-phone::after {
+        content: '↻';
+        position: absolute;
+        right: -38px;
+        top: 25px;
+        color: #fff;
+        font-size: 28px;
+        font-weight: 900;
+    }
+}
+
+@keyframes rotate-phone {
+    0%, 20% { transform: rotate(0); }
+    60%, 85% { transform: rotate(90deg); }
+    100% { transform: rotate(0); }
+}
+
+/* 휴대폰 가로 화면 */
+@media (orientation: landscape) and (max-height: 600px) {
+    :root {
+        background: #071815;
+    }
+
+    body {
+        min-width: 568px;
+        background: linear-gradient(135deg, #071815, #102b26 60%, #0b201c);
+    }
+
+    .app-shell {
+        width: 100%;
+        max-width: none;
+        height: 100dvh;
+        margin: 0;
+        padding: max(8px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+        overflow: auto;
+    }
+
+    .app-shell.camera-running {
+        overflow: hidden;
+    }
+
+    .app-shell > header {
+        display: grid;
+        grid-template-columns: auto minmax(180px, 1fr) auto;
+        grid-template-rows: auto auto;
+        column-gap: 14px;
+        align-items: center;
+        margin: 0 0 8px;
+        padding: 0 4px;
+        color: #fff;
+    }
+
+    .server-line {
+        grid-column: 1;
+        grid-row: 1 / 3;
+        color: #b9d3cc;
+        white-space: nowrap;
+    }
+
+    .app-shell > header h1 {
+        grid-column: 2;
+        grid-row: 1;
+        margin: 0;
+        color: #fff;
+        font-size: 22px;
+        line-height: 1.15;
+    }
+
+    .app-shell > header p {
+        grid-column: 2;
+        grid-row: 2;
+        overflow: hidden;
+        margin: 2px 0 0;
+        color: #9eb8b1;
+        font-size: 11px;
+        line-height: 1.25;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+    }
+
+    .voice-toggle {
+        grid-column: 3;
+        /* grid-row: 1 / 3; */
+        margin: 0;
+        padding: 9px 12px;
+        border-color: #315b51;
+        background: #102d27;
+        color: #d7eee8;
+    }
+
+    .voice-toggle.on {
+        border-color: #2bc59a;
+        background: #123d33;
+        color: #8cf0d2;
+    }
+
+    .capture-card {
+        /* height: calc(100dvh - 68px); */
+        padding: 12px;
+        border: 1px solid #24443c;
+        border-radius: 18px;
+        background: rgba(9, 28, 24, .96);
+        box-shadow: 0 18px 50px rgba(0, 0, 0, .28);
+        /* overflow: auto; */
+    }
+
+    .capture-card.is-empty {
+        overflow: hidden;
+    }
+
+    .upload-options {
+        grid-template-columns: minmax(0, 1.4fr) minmax(220px, .6fr);
+        height: 100%;
+        gap: 12px;
+    }
+
+    .camera-zone {
+        height: 100%;
+        min-height: 0;
+        border-color: #3d7b69;
+        background: linear-gradient(145deg, #102f28, #0b211d);
+        color: #fff;
+    }
+
+    .camera-zone small {
+        color: #9eb8b1;
+    }
+
+    .video-zone {
+        height: 100%;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        background: #101d36;
+        border-color: #2b4070;
+        color: #eef3ff;
+    }
+
+    .video-zone > span:last-child {
+        align-items: center;
+    }
+
+    .video-zone small {
+        color: #aab7d4;
+    }
+
+    .live-media-card {
+        display: grid;
+        grid-template-columns: minmax(0, 1.55fr) minmax(290px, .75fr);
+        grid-template-rows: minmax(0, 1fr);
+        gap: 0;
+        padding: 0;
+        overflow: hidden;
+    }
+
+    .live-media-card .preview-wrap {
+        grid-column: 1;
+        grid-row: 1;
+        height: 100%;
+        min-height: 0;
+        border-radius: 18px 0 0 18px;
+    }
+
+    .live-media-card .preview-wrap video {
+        width: 100%;
+        height: 100%;
+        max-height: none;
+        aspect-ratio: auto;
+        object-fit: cover;
+    }
+
+    .live-media-card > .live-caption {
+        grid-column: 2;
+        grid-row: 1;
+        min-width: 0;
+        min-height: 0;
+        height: auto;
+        max-height: none;
+        padding: 16px 18px;
+        border-left: 1px solid #263f39;
+        border-radius: 0 18px 18px 0;
+        overflow-y: auto;
+    }
+
+    .live-media-card .live-guidance {
+        font-size: clamp(16px, 1vw, 22px);
+    }
+
+    .live-media-card .live-location-row {
+        padding: 9px 0;
+    }
+
+    .live-media-card .live-landmark {
+        padding: 8px 9px;
+    }
+
+    .live-media-card .actions,
+    .live-media-card .file-row {
+        display: none;
+    }
+
+    .camera-live-badge {
+        left: 14px;
+        top: 14px;
+    }
+
+    .change-button {
+        right: 14px;
+        bottom: 14px;
+        background: rgba(6, 22, 18, .82);
+        color: #fff;
+        backdrop-filter: blur(8px);
+    }
+
+    footer {
+        display: none;
+    }
+}
+
+/* ==================================================
+   전체 화면 고정 레이아웃
+   카메라/영상 왼쪽 · 실시간 설명 오른쪽
+   ================================================== */
+
+html,
+body,
+#root {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+}
+
+body {
+    min-width: 320px;
+    min-height: 0;
+}
+
+/* 전체 화면: 헤더 + 콘텐츠 */
+.app-shell {
+    width: 100%;
+    max-width: none;
+    height: 100dvh;
+    margin: 0;
+    padding: clamp(8px, 1.4vw, 18px);
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: clamp(8px, 1.2vw, 14px);
+    overflow: hidden;
+}
+
+/* 헤더도 한 줄에 가깝게 축소 */
+.app-shell > header {
+    min-width: 0;
+    margin: 0;
+    padding: 0 4px;
+    display: grid;
+    grid-template-columns: auto minmax(180px, 1fr) auto;
+    grid-template-rows: auto auto;
+    column-gap: 14px;
+    align-items: center;
+}
+
+.server-line {
+    grid-column: 1;
+    grid-row: 1 / 3;
+    white-space: nowrap;
+}
+
+.app-shell > header h1 {
+    grid-column: 2;
+    grid-row: 1;
+    margin: 0;
+    font-size: clamp(18px, 2vw, 27px);
+    line-height: 1.1;
+}
+
+.app-shell > header p {
+    grid-column: 2;
+    grid-row: 2;
+    min-width: 0;
+    margin: 3px 0 0;
+    overflow: hidden;
+    font-size: clamp(10px, 1.1vw, 13px);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.voice-toggle {
+    grid-column: 3;
+    grid-row: 1 / 3;
+    margin: 0;
+    white-space: nowrap;
+}
+
+/* 메인 콘텐츠는 남은 높이를 정확히 사용 */
+.capture-card {
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    margin: 0;
+    padding: 12px;
+    overflow: hidden;
+}
+
+/* 처음 접속했을 때 카메라/영상 선택 화면 */
+.upload-options {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(220px, 0.6fr);
+    gap: 12px;
+}
+
+.camera-zone,
+.video-zone {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+}
+
+/* 카메라 또는 영상 재생 화면 */
+.live-media-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1.65fr) minmax(260px, 0.75fr);
+    grid-template-rows: minmax(0, 1fr);
+    gap: 0;
+    padding: 0;
+    overflow: hidden;
+}
+
+/* 왼쪽: 카메라/영상 */
+.live-media-card > .preview-wrap {
+    grid-column: 1;
+    grid-row: 1;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    border-radius: 18px 0 0 18px;
+    overflow: hidden;
+    background: #000;
+}
+
+.live-media-card > .preview-wrap video,
+.live-media-card > .preview-wrap img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    aspect-ratio: auto;
+    object-fit: cover;
+}
+
+/* 오른쪽: 탐지 결과와 위치 안내 */
+.live-media-card > .live-caption {
+    grid-column: 2;
+    grid-row: 1;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    max-height: none;
+    padding: clamp(12px, 1.6vw, 22px);
+    border-left: 1px solid #263f39;
+    border-radius: 0 18px 18px 0;
+    overflow: hidden;
+    background: #101716;
+}
+
+.live-media-card .live-guidance {
+    font-size: .8rem;
+    line-height: 1.3;
+}
+
+.live-media-card .live-location-row {
+    padding: clamp(7px, 1vh, 11px) 0;
+}
+
+.live-media-card .live-landmarks {
+    gap: clamp(3px, 0.6vh, 6px);
+}
+
+.live-media-card .live-landmark {
+    padding: clamp(6px, 0.8vh, 9px);
+}
+
+/* 영상 위에 이미 조작 버튼이 있으므로 하단 영역 제거 */
+.live-media-card .actions,
+.live-media-card .file-row {
+    display: none;
+}
+
+footer {
+    display: none;
+}
+
+/* 세로 모바일에서는 기존 회전 안내 사용 */
+@media (max-width: 900px) and (orientation: portrait) {
+    .orientation-gate {
+        display: flex;
+    }
+}
+
+/* 모바일 가로 화면 미세 조정 */
+@media (orientation: landscape) and (max-height: 600px) {
+    .app-shell {
+        padding:
+            max(6px, env(safe-area-inset-top))
+            max(10px, env(safe-area-inset-right))
+            max(6px, env(safe-area-inset-bottom))
+            max(10px, env(safe-area-inset-left));
+        gap: 7px;
+    }
+
+    .app-shell > header {
+        column-gap: 10px;
+    }
+
+    .server-line {
+        font-size: 10px;
+    }
+
+    .app-shell > header h1 {
+        font-size: 20px;
+    }
+
+    .app-shell > header p {
+        font-size: 10px;
+    }
+
+    .voice-toggle {
+        padding: 7px 10px;
+        font-size: 11px;
+    }
+
+    .live-media-card {
+        grid-template-columns: minmax(0, 1.7fr) minmax(250px, 0.8fr);
+    }
+
+    .live-media-card > .live-caption {
+        padding: 11px 13px;
+    }
+
+    .caption-time {
+        font-size: 9px;
+    }
+
+    .live-detail span {
+        font-size: 10px;
+        line-height: 1.25;
+    }
+}
+
+/* 폭이 좁은 가로폰 */
+@media (orientation: landscape) and (max-width: 700px) {
+    .server-line {
+        display: none;
+    }
+
+    .app-shell > header {
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .app-shell > header h1,
+    .app-shell > header p {
+        grid-column: 1;
+    }
+
+    .voice-toggle {
+        grid-column: 2;
+    }
+
+    .live-media-card {
+        grid-template-columns: minmax(0, 1.55fr) minmax(220px, 0.85fr);
+    }
+}
+
+.bottom-grid{
+        border-top: 1px solid #263330;
+    /* border-bottom: 1px solid #263330; */
+
+        height: -webkit-fill-available;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+}
+
+.live-detail span + span {
+    color: #85d9c1;
+}
+
+/* 실시간 값의 유무가 바뀌어도 오른쪽 안내 패널의 DOM 위치는 고정한다. */
+.live-location-row {
+    min-height: 34px;
+}
+
+.live-landmarks,
+.live-empty {
+    min-height: 48px;
+}
+
+.live-empty {
+    display: flex;
+    align-items: center;
+}
+
+.live-detail {
+    min-height: 39px;
+}
+
+.position-grid {
+    min-height: 159px;
+}
+
+.bottom-grid {
+    min-height: 52px;
+}
+
+@media (orientation: landscape) and (max-height: 600px) {
+    .live-location-row { min-height: 28px; }
+    .live-landmarks, .live-empty { min-height: 39px; }
+    .live-detail { min-height: 31px; }
+    .position-grid { min-height: 137px; margin-top: 7px; padding-top: 7px; }
+    .grid-map { height: 86px; }
+}
+
+.position-grid {
+    margin-top: 12px;
+    padding-top: 11px;
+    border-top: 1px solid #263330;
+}
+
+.position-grid-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 7px;
+    font-size: 12px;
+    color: #aac2bb;
+}
+
+.position-grid-heading b { color: #f0faf7; }
+
+.grid-map {
+    position: relative;
+    height: 104px;
+    border: 1px solid #60746e;
+    border-radius: 6px;
+    background-color: #16221f;
+    background-image:
+        linear-gradient(to right, rgba(151, 181, 171, .3) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(151, 181, 171, .3) 1px, transparent 1px);
+    background-size: calc(100% / var(--grid-cols)) calc(100% / var(--grid-rows));
+}
+
+.grid-landmark,
+.grid-current {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    display: grid;
+    justify-items: center;
+    pointer-events: none;
+}
+
+.grid-landmark i {
+    width: 7px;
+    height: 7px;
+    border: 2px solid #d7e4df;
+    border-radius: 50%;
+    background: #64766f;
+}
+
+.grid-landmark span {
+    position: absolute;
+    top: 10px;
+    padding: 1px 3px;
+    border-radius: 3px;
+    background: rgba(16, 23, 22, .82);
+    color: #cfe1db;
+    font-size: 9px;
+    white-space: nowrap;
+}
+
+.grid-current { z-index: 2; }
+.grid-current i {
+    width: 15px;
+    height: 15px;
+    border: 3px solid #ffe8a6;
+    border-radius: 50%;
+    background: #eb5b50;
+    box-shadow: 0 0 0 4px rgba(235, 91, 80, .2);
+}
+.grid-current span {
+    margin-top: 3px;
+    color: #ffe8a6;
+    font-size: 10px;
+    font-weight: 900;
+}
+.position-grid small {
+    display: block;
+    margin-top: 6px;
+    color: #9ab1aa;
+    font-size: 10px;
 }

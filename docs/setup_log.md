@@ -856,4 +856,861 @@ Locator 판정 로직**으로 교체함:
 - [ ] 표지판당 30~50장씩 다양한 거리/각도/조명으로 사진 추가 확보 (목표 150~300장 이상)
 - [ ] 사진이 충분해지면 Roboflow에서 train/valid 분리하여 재 export
 - [ ] bbox 크기 기반 "도착/복도" 판정 로직을 `core.py`/`sign_matcher.py`에 추가
-- [ ] Git 저장소 초기화 및 원격 저장소 연결
+
+## 27. Git 저장소 초기화 및 machine-vision1에 브랜치 푸시 (2026-09-17)
+
+`git init -b classroom-locator`로 (main과 공유 이력 없는) 독립 브랜치로
+초기화하고, `https://github.com/JIWOO1127/machine-vision1`에
+`classroom-locator` 브랜치로 첫 커밋을 푸시함.
+
+- `.gitignore` 정리: 기존엔 `models/yolo/*`를 통째로 무시하고 있었는데,
+  이번엔 모델 가중치를 포함하기로 해서 그 규칙을 뺌. 대신 이전에 안
+  걸러지던 `runs/`(YOLO 추론/학습 산출물, 99MB), `weights/`(베이스
+  체크포인트), `yolov8n.pt`(ultralytics 자동 다운로드 베이스 모델),
+  `.pytest_cache/`, `node_modules/`, `webapp/frontend/dist/`,
+  `webapp/backend/results/*`를 새로 제외함.
+- 원인 불명의 쓰레기 파일 `=3.8`(깨진 pip 명령어가 만든 것으로 추정) 삭제.
+- 최종 커밋: 1009개 파일, models/yolo 4개 + external/seojiwoo_core 2개
+  (.pt, 총 36MB) 포함, `data/dataset*`(Roboflow 학습 데이터) 포함.
+- `git push -u origin classroom-locator` 성공, 원격에 새 브랜치 생성 확인
+  (`git ls-remote`로 확인).
+
+## 28. 위치별 좌표/안내 문구 수정 + 로고 2단계 지원 (2026-09-17)
+
+사용자가 준 정확한 좌표/문구로 `configs/locations.yaml` 수정:
+front_door "정문 앞"(0,2)/"뒤로 돌아주세요.", room4 "4 강의실 앞"(2,0)/
+"벽을 따라 앞으로 직진하세요.", room2 "2 강의실 앞"(13,0)/"문까지 직진 후
+왼쪽으로 돌아주세요.", rear_door "후문 앞"(14,2)/"직진해주세요.".
+
+**로고는 두 단계**로 나눔 - 멀리서 처음 보일 때는 기존 (0,0) "로고"
+(guidance 없음), 아주 가까이(1.5m 이내) 붙으면 (0,1) "중앙 로고 앞"
+(guidance "왼쪽으로 돌아주세요.")으로 갈림. 이걸 위해
+`GridPositionTracker`(`grid_tracker.py`) 구조를 바꿈:
+- `_rules`가 `dict[str, Location]`(이름당 하나)에서
+  `dict[str, list[Location]]`(이름당 여러 단계, snap_distance_m 오름차순
+  정렬)로 바뀜 - **같은 name으로 locations.yaml에 여러 번 등록하면 여러
+  단계가 됨**(멀리서/가까이 등), 다른 물체들은 원래대로 단일 항목 리스트라
+  동작 그대로.
+- `_best_stage(name, distance_m)`: 등록된 단계 중 distance_m이 처음으로
+  맞아떨어지는(=가장 가까운 조건의) 단계를 고름.
+- `current_location: Location | None` 속성 추가 - 지금 스냅된 지점이
+  정확히 locations.yaml의 어느 항목(guidance 포함)인지 바로 접근 가능
+  (기존엔 `current_label`이라는 문자열만 있어서 guidance를 못 가져왔음).
+- `update()`(부모, calibration 기반)/`update_from_frame()`(Seojiwoo Locator
+  기반) 둘 다 `_best_stage`/`_apply`를 공유하도록 리팩터링.
+
+**UI/자막 문구를 실제로 locations.yaml의 guidance에서 가져오도록 연결**
+(이전엔 항상 자동 생성 문장만 썼음):
+- `webapp/backend/vision_bridge.py`: `tracker.current_location`이 있으면
+  `"현재 위치는 '{display_name}'입니다. {guidance}"` 형식으로 `cue.guidance`
+  구성(화면 자막 + TTS). 확정 전(랜드마크만 보이고 아직 스냅 안 됐을 때)엔
+  기존처럼 "~m에서 ~이 보입니다" 문장으로 폴백.
+- `grid_tracker.py`의 `render_grid_image()`도 `current_location` 인자를
+  받아 CLI 격자 지도 창에도 같은 형식(+ guidance 두 번째 줄)으로 표시.
+  `realtime_pipeline.py`에서 이 인자를 넘기도록 호출부 수정.
+
+**검증**: front_door/rear_door/room4/room2/logo(멀리·가까이) 5가지
+시나리오 전부 `vision_bridge._build_cue()`로 직접 돌려서 사용자가 준
+문구와 정확히 일치하는 것 확인.
+
+## 29. configs/ 폴더 정리 (2026-09-17)
+
+파일 정리 요청으로 `configs/final_best.yaml`, `configs/yolo_only.yaml` 삭제.
+둘 다 9/16 모델 비교 실험(OCR vs YOLO단독v1 vs YOLO단독v2, 15번 항목 참고)때
+만든 것으로, 어떤 스크립트의 기본값도 아니고(`--config`로 수동 지정해야만
+쓰임) 결정이 끝난 뒤로는 아무 데서도 참조 안 됨. `configs/default.yaml`
+(전 스크립트 기본 설정)과 `configs/locations.yaml`(위치 매핑)만 남김 —
+둘 다 grep으로 실제 사용처 확인 후 남긴 것.
+
+## 30. 모델/데이터/학습산출물 정리 + 안 쓰는 파이썬 파일 대량 삭제 (2026-09-17)
+
+파일 정리 2단계. 1단계(디스크만): `models/yolo/best.pt`/`best_yolo_only.pt`,
+`data/dataset_yolo_only/`, `runs/`(99MB, 학습 실행 기록), `weights/`,
+`yolov8n.pt`, `.pytest_cache/`, `outputs/eval|results|logs`의 내용물 삭제
+(전부 재생성 가능, git엔 애초에 안 올라가 있었음 - `.gitignore` 참고).
+
+2단계: **안 쓰는 파이썬 파일 삭제 + 관련 코드 리팩터링**. grep으로 실제
+호출부가 있는지 하나씩 확인한 뒤 진행:
+
+- **OCR 관련 완전 삭제** (메인 파이프라인은 이미 OCR 안 쓰기로 결정했었고,
+  실제로 아무 데서도 안 부르고 있었음 - 3강의실 정정용 OCR은 완전히 다른
+  경로인 `classroom_locator.seojiwoo.ocr_verify.OcrVerifier`라 안 건드림):
+  `src/classroom_locator/ocr/`(전체 - easyocr/paddleocr/tesseract 리더 +
+  base + 팩토리), `src/classroom_locator/localization/sign_matcher.py`
+  (`SignMatcher`). `MatchResult` 데이터클래스만 `location_map.py`로 옮김
+  (core.py가 OCR과 무관하게 "탐지 클래스 -> Location" 결과 타입으로
+  여전히 씀).
+- **평가(evaluation) 관련 완전 삭제** (사용자 요청): `src/classroom_locator/eval_metrics.py`,
+  `src/classroom_locator/evaluation.py`, `scripts/evaluate.py`,
+  `scripts/evaluate_test_sample.py`. `scripts/run_realtime.py`의 `--eval`
+  옵션과 관련 코드도 같이 제거.
+- **VisualLocationEstimator 계열 삭제** (아무 데서도 실제로 안 부르고 있었음 -
+  격자 방식(SeojiwooGridPositionTracker)으로 완전히 대체됨):
+  `src/classroom_locator/localization/visual_localization.py`,
+  `scripts/estimate_position.py`, `scripts/calibrate_distance.py`,
+  `data/distance_calibration.json`, `data/eval/`. `grid_tracker.py`의
+  `GridPositionTracker`도 이제 안 쓰는 calibration 기반 `update()`
+  메서드/`calibration` 매개변수를 제거하고 `SeojiwooGridPositionTracker`가
+  공유하는 부분(_best_stage/_apply/경로 계산)만 남김.
+- **평면도 시각화 삭제**: `scripts/visualize_map.py`,
+  `src/classroom_locator/utils/map_viz.py`(`draw_floor_map`) - `coords`
+  기반 구식 지도로, 실시간 격자 지도(`render_grid_image`)로 대체됨.
+- **테스트**: 삭제된 모듈을 테스트하던 `tests/test_ocr.py`,
+  `tests/test_localization.py` 삭제. `tests/test_detection.py`만 남음
+  (`pytest` 2개 통과 확인).
+- **`external/` 폴더도 삭제** (사용자 요청) - `src/classroom_locator/seojiwoo/`가
+  이미 실제로 쓰는 이식 버전이라 원본 코드 파일들은 중복. 단, `.md 파일은
+  제외`라는 지시를 처음에 놓쳐서 `external/seojiwoo_core/README.md`까지
+  같이 지웠다가 git 기록(`git show HEAD:...`)에서 복원하고, 코드가 삭제된
+  사실을 안내하는 문구를 맨 위에 추가함.
+- `requirements.txt`에서 `rapidfuzz`(SignMatcher 전용), `matplotlib`
+  (eval_metrics/map_viz 전용) 제거. `configs/default.yaml`의 `ocr:` 섹션과
+  `localization.match_threshold` 제거.
+
+**검증**: 전체 컴파일 체크 통과, conda env에서 `LocatorPipeline`/`SeojiwooGridPositionTracker`/
+webapp Flask 테스트 클라이언트(`/api/health`, `/api/analyze`) 전부 정상
+동작 확인, `pytest tests/` 2개 통과. grep으로 삭제된 모듈에 대한 잔여
+참조 없음 확인.
+
+이제 `src/classroom_locator/`에 OCR 백엔드/평가/시각화 관련 코드 없이
+탐지 → 클래스 직접 매칭 → 격자 위치 추적(YOLO + 3강의실 OCR 정정)
+경로만 남음.
+
+## 31. final_best.pt를 logo 포함 6클래스로 교체, 모델 파일 1개로 통합 (2026-09-17)
+
+사용자가 팀원 쪽에서 로고까지 포함해서 새로 학습한 모델을
+`models/yolo/final_best.pt`에 직접 덮어썼고(기존 5클래스 내용은
+`v1_best.pt`라는 새 이름으로 남겨둠), "이제 `final_best.pt` 하나만 쓰고
+나머지는 다 지워달라"고 요청함.
+
+파일로 직접 클래스 목록을 확인해서 반영:
+- `final_best.pt` (교체됨): `2_class, 4_class, front_door, rear_door,
+  water_dispenser, logo` — **6클래스, logo 포함**
+- `v1_best.pt`(옛 final_best.pt 내용, 로고 없음), `final_best_v2_with_logo.pt`
+  (교체 전 별도 로고 모델, 이제 새 final_best.pt와 내용 중복) 둘 다 삭제.
+  `models/yolo/`엔 이제 `final_best.pt` 하나만 있음.
+
+`final_best.pt` 자체가 로고를 포함하게 되면서, 로고 인식을 위해 별도
+`logo_weights` 모델을 같이 돌릴 필요가 없어짐 - 관련 코드 단순화:
+- `realtime_pipeline.py`: `logo_weights_path`(=`final_best_v2_with_logo.pt`
+  자동 탐색) 로직 제거, `weights`만 넘김.
+- `webapp/backend/vision_bridge.py`: `DEFAULT_LOGO_WEIGHTS` 제거.
+- `scripts/run_seojiwoo_demo.py`: `--nav` 시 자동으로 로고 모델 채워주던
+  로직 제거 (`--logo_weights`는 나중에 다시 모델을 분리하고 싶을 경우를
+  대비해 옵션 자체는 남겨둠, 기본값 None).
+- `configs/locations.yaml`의 logo 관련 주석 갱신.
+
+**검증**: `SeojiwooGridPositionTracker`가 `final_best.pt` 하나로만 생성돼도
+`logo_model`이 `None`(불필요)이고 주 모델의 `names`에 `logo`가 포함된
+것 확인, webapp `/api/health` 정상 응답 확인. grep으로 삭제된 파일명에
+대한 잔여 참조 없음 확인.
+
+## 32. external/ 폴더 완전 삭제 (2026-09-17)
+
+지난번(30번 항목)엔 "md 파일 제외" 지시 때문에 `external/seojiwoo_core/README.md`만
+남기고 코드/모델 파일을 지웠는데, 이번엔 "external 파일이랑 폴더 다
+지워줘, 필요하면 올바른 위치로 옮겨줘"라는 요청으로 그 README까지 포함해
+폴더 전체를 삭제함.
+
+README.md 중 아직 쓸모 있는 내용(원본 `Locator`/`Navigator`/`ocr_verify`와
+우리 구현의 차이점 비교 - 실측 물리크기 거리추정, 접근추세 확인, 동선 제약,
+근접시 OCR, TTS 등)은 그 코드가 실제로 있는 위치인
+`src/classroom_locator/seojiwoo/README.md`로 옮겨서 새로 정리함 (오래된
+파일 목록/실행법 등 지금은 안 맞는 부분은 빼고, 지금 구조에 맞게 다시 씀).
+
+`external/seojiwoo_core/`를 로컬 경로로 언급하던 나머지 파일들의 주석도
+정리 - `locator.py`/`navigator.py`/`ocr_verify.py`/`run_seojiwoo_demo.py`의
+"원본:" 표기를 로컬 경로 대신 실제 GitHub URL로, `vision_bridge.py`/
+`webapp/README.md`의 언급은 `classroom_locator/seojiwoo/`(코드가 실제로
+있는 위치)로 갱신. `docs/setup_log.md`(이 파일)의 과거 기록은 그 시점의
+사실이라 그대로 둠.
+
+**검증**: grep으로 `external/seojiwoo_core` 잔여 참조가 `docs/setup_log.md`
+(과거 기록, 의도적으로 유지) 외에는 없는 것 확인. `classroom_locator.seojiwoo`
+import 정상 동작 확인.
+
+## 33. CLI 격자 지도에 방향 표시 추가 + "위치 불확실" UI 문구 제외 (2026-09-17)
+
+- `grid_tracker.py`에 `_direction_from_box()` 추가 (webapp `vision_bridge.py`의
+  `_direction_from_box`/`Navigator._steer`와 동일 임계값 0.35/0.65). `GridPositionTracker`에
+  `current_direction` 속성 추가, `_apply()`가 같이 저장하도록 수정.
+  `SeojiwooGridPositionTracker.update_from_frame()`이 확정된 탐지의 bbox로
+  방향을 계산해서 넘김. `render_grid_image()`가 `current_direction`을 받으면
+  캡션에 "(왼쪽에서 보임)" 식으로 붙여서 보여줌. `realtime_pipeline.py`
+  호출부도 갱신. 실제 렌더 이미지로 확인 완료.
+- 웹 UI에서 "위치 불확실"/"재생 대기" 같은 미확정 상태 문구를 아예 안 보이게
+  변경 (요청에 따라 완전 제외, 대체 문구 없음): `webapp/frontend/src/App.jsx`의
+  `LivePanel`(`live-location-row`)과 결과 카드(`location-box`)를
+  `location?.status === 'localized'`일 때만 렌더링하도록 조건부 처리.
+  `vision_bridge.py`의 `_build_cue()`도 위치 미확정 + 탐지물도 없을 때
+  "이 화면에서는 위치를 판단할 기준 객체가 보이지 않습니다" 대신 빈 문자열을
+  반환하도록 수정(프론트가 자체 안내 문구로 대체). `npm run build`로 재빌드함.
+
+## 34. `seojiwoo` -> `landmark_locator` 이름 변경, Navigator 삭제, 위치별 안내 재정비 (2026-09-17)
+
+**이름 변경**: 사람 이름(`서지우`)을 패키지/클래스 이름으로 쓰는 게 부적절하다는
+지적에 따라 전면 변경.
+- `src/classroom_locator/seojiwoo/` → `src/classroom_locator/landmark_locator/`
+- `SeojiwooGridPositionTracker` → `LandmarkGridPositionTracker`
+- `scripts/run_seojiwoo_demo.py` → `scripts/run_landmark_demo.py`
+- 관련 import/문서(`webapp/README.md`, `landmark_locator/README.md` 등) 전부 갱신.
+  원본 GitHub URL(`.../seojiwoo-detection/seojiwoo/core/...`)과 "서지우님"
+  이름 attribution은 실제 출처 표기라 그대로 둠.
+
+**`Navigator` 완전 삭제**: "SEARCH_HINT 같은 중복 코드가 많아 보인다"는 지적을
+조사해보니, 진짜 문제는 중복이 아니라 `Navigator`(그리고 `STEPS`/`SEARCH_HINT`/
+`ON_REACH`)가 `scripts/run_landmark_demo.py --nav` 말고는 **실제 제품(웹 UI,
+CLI 격자 지도) 어디에도 안 쓰이는** 죽은 코드였다는 것. `navigator.py` 삭제,
+`landmark_locator/__init__.py`에서 export 제거, `run_landmark_demo.py`에서
+`--nav`/`--wall_m`/시나리오 관련 코드 제거.
+
+**위치별 안내 문구/좌표 최종본**으로 `configs/locations.yaml` 갱신:
+- front_door (0,2) "정문 앞" / "뒤로 돌아주세요."
+- logo 2단계: (0,0) "로고"(멀리서, guidance 없음), (0,1) "중앙로고 앞"
+  (1.5m 이내) / "왼쪽으로 돌아주세요."
+- room4 (2,0) "4 강의실 앞" / "벽을 따라 앞으로 직진하세요."
+- room2 (13,0) "2 강의실 앞" / "문까지 직진 후 왼쪽으로 돌아주세요."
+- rear_door 2단계(신규): (14,2) "후문 앞"(3.0m 이내) / "직진해주세요.",
+  (14,3) "목적지"(1.0m 이내, 더 가까움) / "도착하였습니다. 안내 모드를
+  종료합니다." — logo와 같은 다단계(`_best_stage`) 패턴 재사용.
+
+**로고 중앙 정렬 동적 안내 추가**: Navigator의 `_steer()`(bbox 중심 x로
+좌/우/직진 판정, 임계값 0.35/0.65) 아이디어 중 이 부분만 뽑아서 재구현.
+`grid_tracker.py`에 `_describe_position(location, direction)` 모듈 함수 신설 -
+로고를 추적 중인데 화면 중앙(앞쪽)이 아니면, locations.yaml에 적힌 고정
+guidance 대신 "왼쪽/오른쪽으로 회전해서 중심을 유지해주세요"라는 동적 문구로
+바꿔치기함 (중앙이면 원래 guidance 그대로). `GridPositionTracker.describe()`
+메서드로 감싸서 웹/CLI 양쪽이 같은 로직을 공유하도록 함(전에 있던 중복 로직
+문제를 이번엔 제대로 해소):
+- `render_grid_image()`: `_describe_position()` 결과를 헤드라인/보조문구
+  두 줄로 표시.
+- `webapp/backend/vision_bridge.py`의 `_build_cue()`: `tracker.describe()`
+  결과를 그대로 `cue.guidance`로 씀 (미확정 상태일 때는 기존 폴백 로직 유지).
+
+**검증**: 9가지 시나리오(정문/4강/2강/후문/목적지/로고 멀리·중앙·좌·우)를
+`tracker._apply()` + `tracker.describe()`로 직접 돌려서 전부 사용자가 준
+문구와 정확히 일치하는 것 확인. `render_grid_image()` 실제 렌더 이미지로도
+로고-왼쪽 시나리오 확인. webapp `/api/health` 정상 응답(`location_count: 9`,
+새 rear_door 2단계 항목 포함) 확인.
+
+## 35. room3 문구 정리 + 로고 각도 안내를 "3초 이상 놓쳤을 때만"으로 재설계 (2026-09-17)
+
+**room3**: `(8, 0)`에 이미 등록돼 있었는데(사용자가 "새로 추가"라고 착각했던
+부분), 예전 스타일 문구("3강의실"/"앞으로 쭉 직진하세요.")가 안 바뀌어 있던
+것만 최신 패턴("3 강의실 앞"/"계속 벽을 따라 직진하세요.")으로 갱신.
+
+**로고 거리 2단계 폐지**: "거리에 따라 다른 메시지가 나오는 게 싫다"는
+피드백에 따라, logo를 (0,0)"로고"(멀리서)+(0,1)"중앙로고 앞"(가까이) 2단계에서
+**(0,1) "중앙로고 앞" 단일 지점**으로 되돌림 (`snap_distance_m: 3.0`, 다른
+지점들과 동일 패턴). rear_door의 2단계((14,2) "후문 앞" / (14,3) "목적지")는
+사용자가 이번에도 그대로 유지해서 안 건드림 - "거리별 다른 메시지" 불만은
+로고 한정이었음.
+
+**로고 각도 안내를 "실시간 off-center 감지"에서 "3초 이상 놓쳤을 때만"으로
+전면 재설계**: 이전엔 로고가 화면 중앙이 아니면 매 프레임 "중심을
+유지해주세요"가 계속 나왔는데, 이제는 **로고를 3초 이상 새로 못 찾았을 때만**
+"왼쪽/오른쪽으로 더 회전해주세요"가 나오고, 평소(잘 보일 때)엔 화면 중앙이든
+아니든 그냥 locations.yaml의 고정 guidance("왼쪽으로 돌아주세요.")만 나옴.
+
+구현 (`grid_tracker.py`):
+- `_LOGO_LOST_TIMEOUT_S = 3.0` 상수 추가.
+- `GridPositionTracker`에 `current_matched_at`(마지막 실제 갱신 시각)과
+  `logo_lost`(bool) 상태 추가.
+- `_apply()`가 `t` 매개변수를 받아 `current_matched_at`을 갱신하고
+  `logo_lost`를 즉시 False로 리셋.
+- `LandmarkGridPositionTracker.update_from_frame()`을 재구성 - 이번 프레임에
+  못 잡았어도(조기 return 대신) 매번 "로고 추적 중이면 몇 초째 못 찾고
+  있는지" 계산해서 `logo_lost`를 갱신하도록 흐름을 바꿈
+  (`out["t"] - current_matched_at >= 3.0`).
+- `_describe_position(location, direction, lost)`: `lost=True`일 때만
+  "{마지막 방향}으로 더 회전해주세요." (마지막 방향이 없거나 "앞쪽"이었으면
+  일반적인 "왼쪽이나 오른쪽으로 천천히 회전해보세요.")로 바뀜.
+- `render_grid_image()`/`describe()`/`realtime_pipeline.py` 호출부에
+  `logo_lost` 전달.
+
+**검증**: t=0(감지, 왼쪽) → t=2(2초 미탐지, 아직 고정 guidance 유지) →
+t=3.5(3.5초 미탐지, "왼쪽으로 더 회전해주세요"로 전환) → t=4(재감지, 오른쪽,
+즉시 고정 guidance로 복귀) 시나리오 전부 의도대로 동작 확인.
+webapp `/api/health` 정상(`location_count: 8`, 로고 단일화 반영) 확인.
+
+## 36. 로고 각도 안내 조건 정정: "3초 미탐지"가 아니라 "3초 연속 중앙 이탈" (2026-09-17)
+
+35번 항목에서 구현한 조건이 실제 요청과 달랐음이 확인됨 - "3초 이상 못
+찾으면"(탐지 자체가 끊김)이 아니라 **"로고가 보이긴 하는데 화면 중앙이
+아닌 상태가 3초 이상 계속되면"**이 맞는 조건이었음. 재구현:
+
+- `_LOGO_LOST_TIMEOUT_S` → `_LOGO_OFF_CENTER_TIMEOUT_S`(3.0)로 이름/의미 변경.
+- `current_matched_at`(마지막 매칭 시각)에 기반한 "미탐지 경과 시간" 계산
+  대신, `_logo_off_center_since`(중앙 이탈이 시작된 시각)를 추적. 매 프레임
+  로고가 왼쪽/오른쪽으로 잡히면: 이번이 처음 벗어난 거면 그 시각을 기록,
+  이미 벗어나 있던 중이면 시작 시각은 그대로 두고 경과 시간만 재계산.
+  중앙(앞쪽)으로 돌아오거나 다른 랜드마크가 되면 즉시 해제.
+- `logo_lost` bool 속성 → `logo_off_center`로 이름 변경 (`grid_tracker.py`,
+  `realtime_pipeline.py`, `render_grid_image()` 전부 갱신). `update_from_frame()`은
+  "매칭 안 된 프레임에서도 매번 재계산"하던 로직이 필요 없어져서 원래의
+  단순한 early-return 스타일로 되돌림 - 이제 이탈 타이머는 오직 실제로
+  로고가 다시 잡힐 때(`_apply()` 호출 시점)만 갱신됨.
+- 메시지도 "왼쪽/오른쪽으로 더 회전해주세요"(미탐지를 전제로 한 "더") →
+  "왼쪽/오른쪽으로 회전해주세요"(이미 알고 있는 현재 방향으로) 로 단순화.
+
+**검증**: 왼쪽 치우침이 t=0→3.2초까지 연속되는 시나리오에서 3.2초째부터
+`logo_off_center=True`로 바뀌는 것, 중간에 중앙으로 한 번 돌아오면 즉시
+해제되는 것, 다시 치우치기 시작하면 타이머가 그 시점부터 새로 재는 것
+(이전 이력에 영향 안 받음) 전부 확인. webapp 정상 동작 확인.
+
+## 37. 격자 지도 점 라벨에서 "~앞" 제거 (2026-09-17)
+
+`render_grid_image()`가 점 옆에 찍는 이름표(예: "정문 앞", "목적지")를
+음성/자막 안내 문구(`display_name`, 그대로 유지)와 분리해서, 지도용으로만
+짧은 이름을 쓰도록 `_MAP_LABELS` 매핑 추가: front_door→앞문, rear_door→뒷문
+(두 단계 다 동일하게 "뒷문"), room2/3/4→2/3/4강의실, logo→로고. 아래쪽 안내
+문구("현재 위치는 '2 강의실 앞'입니다...")는 안 건드림. 렌더 이미지로 확인.
+
+## 38. 죽은 `coords` 필드 완전 삭제 (2026-09-17)
+
+"모든 장소 위치가 다르다"는 지적을 조사해보니, `configs/locations.yaml`에
+예전 좌표 체계(`coords: {x, y}`)가 `grid_cell`과 다른 값으로 그대로 남아있던
+게 원인이었음 (예: room2는 `coords.x=14`인데 `grid_cell=[13,0]`, front_door는
+`coords={x:-2,y:5}`인데 `grid_cell=[0,2]`로 완전히 다른 스케일). `coords`는
+그걸 그리던 `scripts/visualize_map.py`/`utils/map_viz.py`가 30번 항목에서
+이미 삭제돼서 지금은 어떤 코드에서도 안 읽는 완전한 죽은 필드였음
+(`grep '\.coords\b'` 결과 0건 확인 후 제거).
+
+- `configs/locations.yaml`: 모든 위치에서 `coords` 필드 제거. 관련 주석도 정리.
+- `src/classroom_locator/localization/location_map.py`: `Location` 데이터클래스의
+  `coords` 필드와 로더의 `coords=item.get("coords")` 라인 제거.
+
+이제 위치 좌표는 `grid_cell` 하나만 있음 (단일 소스). 로딩 테스트 +
+webapp `/api/health` 정상 확인.
+
+## 39. 격자 좌표 최종 확정: 그리드 모서리/끝점 배치로 정리 (2026-09-17)
+
+사용자가 6개 지점 좌표를 다시 정리해서 줌 - 세션 초반의 원래 구상(앞문/뒷문을
+격자 끝점에, room4/room2를 x축 위에)으로 되돌아가는 형태:
+
+- 앞문(front_door): (0,2) → **(0,4)** (y축 맨 끝)
+- 로고(logo): (0,1) → **(0,0)** (원점, x축·y축 교차점)
+- 4강의실(room4): (2,0) → **(3,0)**
+- 3강의실(room3): (8,0) 그대로
+- 2강의실(room2): (13,0) → **(14,0)** (x축·x=cols축 교차점)
+- 뒷문(rear_door): (14,2)/(14,3) → **두 단계 모두 (14,4)**로 통일 (x=cols축
+  맨 끝). 거리가 가까워질수록 어차피 두 단계 다 자기 anchor 쪽으로 수렴하는
+  방식이라, 같은 anchor를 써도 "후문 앞"(3.0m)/"목적지"(1.0m) 두 단계
+  거리 임계값 차이는 그대로 유지됨 - "목적지 도착" 안내 기능은 안 없앰
+  (사용자가 언급 안 했지만 최근에 명시적으로 원했던 기능이라 임의로 빼지
+  않고 새 anchor에 맞춰 유지, 답변에서 이 판단을 명시적으로 알림).
+
+**검증**: 6개 지점 전부 새 좌표로 로딩되는 것, describe() 7가지 시나리오
+전부 문구 그대로 유지되는 것, 실제 렌더 이미지로 앞문/로고/4강/3강/2강/뒷문이
+격자 모서리·끝점에 정확히 찍히는 것 확인. webapp 정상 동작 확인.
+
+## 40. "~앞 없는 짧은 이름표"를 webapp에도 연동 (2026-09-17)
+
+37번 항목에서 CLI 격자 지도 점 라벨에만 적용했던 `_MAP_LABELS`를
+`grid_tracker.py`에서 `MAP_LABELS`(공개)로 이름 바꾸고, `webapp/backend/vision_bridge.py`의
+`_landmarks_and_labels()`(실시간 탐지 목록 - `cue.landmarks[]`/`cue.detections[]`,
+CLI 격자 지도의 점들과 같은 역할)에도 적용. "현재 위치" 확정 문구
+(`_location_summary`/`describe()`, 예: "현재 위치는 '4 강의실 앞'입니다...")는
+CLI와 마찬가지로 안 건드리고 그대로 둠 - 확정 위치는 풀네임, 화면에 보이는
+물체 목록은 짧은 이름, 이 구분을 웹/CLI 양쪽에서 동일하게 유지.
+
+**검증**: `_build_cue()`로 직접 확인 - `location.label`/`guidance`는 여전히
+"4 강의실 앞" 풀네임, `landmarks[0].name`/`detections[0].label`은 "4강의실"로
+짧게 나오는 것 확인. webapp `/api/health` 정상 확인.
+
+**참고**: 이 세션 마지막에 사용자가 "4·3·2강의실이 전혀 인식이 안 된다"고
+보고함 - 원인 조사를 시작하려다 사용자가 먼저 이 UI 연동 작업을 요청해서
+그쪽으로 전환함. 인식 문제 원인은 아직 미확인 (다음 세션에서 이어서 조사
+필요 - 표지판 전용 conf 임계값(`sign_conf=0.65`)이 실제 영상 대비 너무
+엄격할 가능성, room3는 OcrVerifier 초기화 실패 시 항상 인식 불가능한
+구조적 한계 등을 우선 의심해볼 것).
+
+## 41. "인식은 되는데 지도에 안 뜸" 진단용 표시 추가 (2026-09-17)
+
+사용자가 "4·3강의실은 인식은 되는데 지도엔 안 뜬다"고 구체화 - 탐지 자체는
+성공하지만(YOLO conf 통과 + 프레임 투표 통과) 격자 갱신의 마지막 문턱인
+`distance_m <= snap_distance_m`(room3/room4는 2.5m, 문/로고는 3.0m)을 못
+넘는 상황으로 추정됨. 근데 그동안 실제 계산된 거리를 확인할 방법이 CLI
+화면에 전혀 없어서(그리드 트래커의 판정 과정이 안 보임), 원인 진단용으로
+표시를 추가함:
+
+- `GridPositionTracker`에 `pending_candidate: tuple[str, float, float] | None`
+  추가 (랜드마크 이름, 계산된 거리, 문턱값). 투표까지는 통과했는데
+  `_best_stage()`가 거리 초과로 None을 반환하면 여기에 기록되고, 확정
+  갱신되면 다시 None으로 지워짐.
+- `render_grid_image()`가 이 값을 받으면 화면 맨 위에 회색 글씨로
+  "4강의실 감지됨 · 4.2m (기준 2.5m 이내)" 식으로 보여줌.
+- `realtime_pipeline.py`가 매 프레임 이 값을 넘겨주도록 연결.
+
+이걸로 실제 테스트해보면 표시되는 거리 값을 보고 `snap_distance_m`을
+얼마로 조정해야 할지(또는 REAL_SIZE 물리 크기 보정이 필요한지) 바로 판단
+가능해짐 - 다음 실제 테스트 결과 기다리는 중.
+
+**검증**: `pending_candidate`를 수동으로 채운 뒤 `render_grid_image()` 렌더
+결과로 화면에 정상 표시되는 것 확인. webapp 정상 동작 확인(이 기능은
+CLI 격자 지도 전용, webapp엔 아직 안 넣음).
+
+## 42. room2/3/4 인식 안 됨 - 근본 원인 확인 및 수정: snap_distance_m 상향 (2026-09-17)
+
+사용자가 "room2/3/4는 인식은 되는데 지도엔 안 뜬다"고 재확인 - 41번 항목의
+진단 표시를 기다리는 대신, `data/dataset/`의 실제 학습 이미지(182장, 문/표지판/
+정수기 등이 섞여 찍힌 원본 사진들)로 `Locator`를 직접 돌려서 실측함.
+
+**측정 결과** (2_class/4_class 감지 59건): 계산된 거리 범위 1.25~5.48m,
+중앙값 3.18m. 기존 문턱 `snap_distance_m: 2.5`로는 이 중 **32%만 통과**
+(2.5m 이내인 것만) - 즉 버그가 아니라 **표지판 클래스의 거리 계산값 자체가
+2.5m보다 훨씬 크게 나오는 경우가 다수**였음. `logo_off_center` 조사(41번)
+때 추측했던 "표지판 REAL_SIZE(팀원 저장소 값 그대로 사용 중, 우리 표지판 실측
+아님)가 안 맞을 수 있다"는 게 실제 원인으로 확인됨 - 다만 정확한 물리
+크기를 재실측하지 않는 한 계산식 자체를 정확히 고칠 수는 없어서, 우선
+임계값을 실측 분포에 맞게 넓히는 방식으로 대응.
+
+- `configs/locations.yaml`: room4/room3/room2의 `snap_distance_m`을
+  `2.5` → `5.0`으로 상향 (그 표본의 97% 커버). 관련 근거를 주석으로 남김.
+
+**같은 182장으로 실제 파이프라인(`update_from_frame`) 전후 비교**: 기존
+2.5m 기준으로는 18장만 room2/3/4로 격자 갱신됐는데, 5.0m로 올리니 55장으로
+3배 증가 확인 (같은 이미지 세트, 같은 모델).
+
+**남은 과제**: 근본적으로는 REAL_SIZE(현재 2_class/4_class 둘 다
+0.20m×0.13m)를 우리 실제 표지판 크기로 재실측하면 더 정확해질 수 있음 -
+지금은 "충분히 넓혀서 놓치지 않게" 하는 임시 대응. `pending_candidate`
+진단 표시(41번)는 앞으로도 유용하니 그대로 둠.
+
+## 43. "4강의실 앞에서 지도 위치가 안 갱신됨" - OCR 오독으로 인한 room2 오판정 버그 수정 (2026-09-17)
+
+사용자가 `--source testvideo.mp4 --grid-map`으로 재생 시 "메인 화면의
+텍스트/위치 안내(핵심 파이프라인 `core.py` 경로)는 정확한데, 격자 지도
+(`grid_tracker.py` 경로)만 특히 4강의실 앞에서 위치가 갱신되지 않는다"고
+보고. 두 경로는 완전히 별개 구현(메인 화면은 YOLO 클래스명으로 바로
+`locations.yaml` 조회, 격자 지도는 seojiwoo `Locator`의 투표+접근추세+OCR
+판정을 거침 - 20번 항목 참고)이라 한쪽만 고장 날 수 있는 구조.
+
+**진단**: cv2 GUI 없이 `LandmarkGridPositionTracker.update_from_frame()`을
+프레임마다 그대로 호출하며 `landmark`/`distance_m`/`reason`/`current_cell`을
+찍는 헤드리스 스크립트로 실제 영상을 재생해 재현. 4강의실 표지판이 0.85m
+거리로 뚜렷하게 잡혀 투표까지 통과한 순간, 로그에 `reason=OCR reject
+"강의실2"`와 함께 `cell_before=(0,0) cell_after=(14,0)`이 찍힘 - **4강의실
+바로 앞인데 격자 위치가 2강의실 지점((14,0))으로 튀어버림**. 화면상으로는
+"엉뚱한 곳으로 튐" 또는 (그 뒤로 4_class 투표가 다시 min_votes를 못 채우고
+`rear_door`로 넘어가버려) 사실상 "4강의실 근처에서는 갱신 안 됨"으로
+보였던 것.
+
+**근본 원인**: `resolve_location_name()`(`grid_tracker.py`)의 의도는
+docstring에 명시된 대로 "YOLO가 구조적으로 낼 수 없는 3강의실만 OCR로
+잡아내고, 2/4는 YOLO 라벨을 그대로 신뢰"하는 것이었는데, 실제 코드는
+`_read_sign_digit()`이 뭐가 됐든 숫자 하나(2/3/4)를 읽기만 하면 그 숫자로
+덮어썼음 (`if digit is not None: return _DIGIT_TO_LOCATION_NAME[digit]`).
+이 영상에서 4강의실 표지판을 OCR이 "강의실2"로 오독(글자 순서/폰트 문제로
+"4"를 "2"처럼 읽은 것으로 추정)하면서, YOLO가 이미 올바르게 `4_class`로
+분류했는데도 `room2`로 잘못 정정되어 격자 지도가 저 멀리 있는 2강의실
+지점으로 순간이동한 것.
+
+**해결**: `resolve_location_name()`에서 `digit == "3"`일 때만 OCR 결과를
+신뢰하도록 조건 추가 (`grid_tracker.py`). 2/4를 오독해도 더 이상 YOLO
+라벨을 덮어쓰지 않음.
+
+**검증**: 같은 헤드리스 재생 스크립트로 재확인 - 수정 전엔 4강의실 근처에서
+`cell_after=(14, 0)`(2강의실 지점)으로 튀었던 것이, 수정 후엔
+`cell_after=(2, 0)`(4강의실 grid_cell `(3,0)` 바로 옆, 거리가 가까워질수록
+자연스럽게 근접)으로 정상 갱신되고 이후 여러 프레임 동안 유지되는 것 확인.
+
+## 44. 격자 지도의 room3 문턱 우회 추가 + 메인 화면에 로고/room3 인식 도입 + 안내 문구 단순화 (2026-09-17)
+
+**44-1. 격자 지도에서 room3가 사실상 인식 안 되던 문제**: 사용자가 "3강의실
+인식이 안 된다"고 보고. 43번에서 고친 OCR 오독 문제와 별개로, room3 판정
+자체가 `LandmarkGridPositionTracker.update_from_frame()`의 표결 문턱(최근
+5프레임 중 4번 이상 같은 랜드마크여야 함, `reason.startswith("votes")`면
+그 프레임은 `resolve_location_name()`/OCR 호출까지 가지도 못하고 보류됨)에
+막히고 있었음. room3 표지판은 YOLO 전용 클래스가 없어 2_class/4_class로만
+애매하게 잡히는 데다 화면에도 짧게만 스쳐서, 헤드리스 재생 로그로 확인해보니
+`votes 1/5`에서만 계속 맴돌고 4/5를 넘긴 적이 없었음 - OCR이 호출될 기회
+자체가 거의 없었던 것.
+
+**해결**: `update_from_frame()`에서 랜드마크가 2_class/4_class일 때는 표결
+문턱과 무관하게 즉시 OCR로 숫자를 읽어보고, "3"이 읽히면 그 즉시 room3로
+반영하도록 예외 경로 추가 (room2/room4/문/로고의 기존 표결 안정화 로직은
+그대로 유지 - room3만 예외). 같은 영상 재검증 결과, 이전엔 4강의실 위치에
+멈춰있던 구간이 정상적으로 room3 위치((7,0), room3 grid_cell (8,0) 인근)로
+전환·유지되는 것을 확인.
+
+**44-2. 메인 화면(지도 제외)에 로고/room3 인식 추가**: 사용자가 "3강의실엔
+바운딩박스가 쳐지는데 room3로는 안 뜨고, 로고는 박스 자체가 안 쳐진다"고
+확인 요청 - 조사해보니 **로고는 이 프로젝트 역사상 단 한 번도 메인 화면
+경로(`pipeline/core.py`의 `LocatorPipeline`)의 인식 대상에 포함된 적이
+없었음** (`configs/default.yaml`을 비롯해 지금까지 존재했던 모든 설정 파일의
+`target_classes`를 확인함 - 로고 관련 작업은 전부 격자 지도 쪽
+(`grid_tracker.py`/`Locator`)에만 있었음, `docs/setup_log.md` 17~31번 참고).
+3강의실도 마찬가지로 `core.py`는 원래(2026-09-17 오전, 16번 항목) "메인
+파이프라인은 OCR 완전 배제"로 정했던 결정 때문에 OCR 기반 정정 로직 자체가
+없어서 구조적으로 room3를 낼 수 없었음.
+
+사용자가 이 결정을 되돌리고 메인 화면에도 로고/room3 인식을 넣어달라고
+요청함에 따라 반영:
+
+- **로고**: `configs/default.yaml`의 `detector.target_classes`에 `"logo"`
+  추가 (YOLO가 이미 6클래스 중 하나로 직접 분류하므로 그 외 코드 변경 불필요).
+- **room3**: `pipeline/core.py`의 `LocatorPipeline`에 OCR 기반 정정 로직 추가
+  - `_ocr_verifier`를 `__init__`에서 준비(단, `locations.yaml`에 room3가 없으면
+    스킵 - 불필요한 easyocr 로딩 방지)
+  - `_resolve_location()`: 탐지가 room2/room4로 분류됐을 때만 표지판 bbox를
+    OCR로 읽어 "3"이면 room3로 정정, 아니면 YOLO 라벨 그대로 신뢰 (43번에서
+    지도 쪽에 적용한 것과 동일한 "3만 신뢰" 원칙)
+  - **중복 방지**: OCR 헬퍼(`build_verifier()`/`read_digit()`)를
+    `landmark_locator/ocr_verify.py`로 옮겨서 `grid_tracker.py`와 `core.py`가
+    공용으로 쓰도록 정리 (기존엔 grid_tracker.py에만 있던 정적 메서드/사설
+    로직을 재사용 가능한 모듈 함수로 승격)
+  - 이 변경은 "OCR로 전체 텍스트를 읽어 위치를 찾는" 예전 방식(9번/14번
+    항목에서 성능이 나빠서 폐기됨)과는 다름 - 표지판이 이미 근접
+    판정됐을 때 숫자 하나만 좁게 재확인하는 용도로 범위가 훨씬 좁음.
+
+**44-3. 안내 문구를 "인식된 객체: (이름)"으로 단순화**: 사용자가 로고/room3를
+포함한 모든 인식 객체에 대해, 기존 "현재 위치는 X 앞입니다. <guidance>"
+안내 대신 그냥 "인식된 객체: (이름)"만 표시해달라고 요청. `realtime_pipeline.py`의
+`_build_guidance_lines()`를 이렇게 교체 (한 줄만 반환, `guidance` 필드는 더
+이상 이 화면에서 안 씀). 이름 표시는 `grid_tracker.py`의 공개 상수
+`MAP_LABELS`(예: room4→"4강의실", logo→"로고")를 그대로 재사용해서 지도
+쪽과 표기를 통일함.
+
+**검증**: `testvideo.mp4`로 `core.LocatorPipeline`을 직접 헤드리스로 돌려
+`object_matches`에 잡힌 위치 이름 전체를 확인 -
+`{logo, room2, room3, room4, rear_door}` 전부 정상적으로 잡히는 것 확인
+(예: "인식된 객체: 로고", "인식된 객체: 3강의실"). 패키지 임포트 순환 문제
+없음 확인 (`landmark_locator` -> `pipeline.core`/`pipeline.grid_tracker` 양쪽
+다 `ocr_verify`의 `build_verifier`/`read_digit`을 문제없이 가져다 씀).
+
+**성능 트레이드오프**: `core.py`는 격자 지도처럼 표결/근접 게이팅이 없어서,
+room2/room4로 분류된 프레임마다 매번 OCR을 호출함 (기존엔 지도 쪽에서
+표결 통과한 프레임에서만 호출됐음). 실사용 중 프레임이 눈에 띄게 느려지면
+이 부분을 근접(bbox 크기) 조건으로 한 번 더 제한하는 걸 고려할 것.
+
+## 45. "2강의실을 4강의실로 인식" - YOLO의 2_class/4_class 혼동을 OCR 재확인으로 정정 (2026-09-17)
+
+44번에서 메인 화면(`core.py`)에 room3 OCR 정정을 넣은 직후, 사용자가
+"2강의실이 4강의실로 인식된다"고 보고.
+
+**원인 조사**: `testvideo.mp4`를 헤드리스로 재생하며 YOLO 원본 분류 결과와
+OCR이 같은 bbox에서 읽은 숫자를 나란히 찍어봄. 프레임 940에서 실제 사례를
+확인: 같은 프레임에 `room4`로 분류된 박스가 2개 있었는데, 그중 하나(더
+작고 신뢰도도 낮은 박스, conf 0.534)는 OCR로 읽으면 "2"가 나옴 - 즉
+**실제로는 2강의실 표지판인데 YOLO 분류기 자체가 4_class로 잘못
+분류**하고 있었음. `2_class`/`4_class`는 표지판 생김새가 거의 동일해서
+(REAL_SIZE 실측값도 두 클래스가 완전히 같음, 16번 항목 참고) YOLO
+분류기가 종종 혼동하는 게 확인된 셈 - 이번에 새로 만든 버그가 아니라
+모델 자체의 기존 한계였고, 지도 쪽(`grid_tracker.py`)은 다수결 투표+접근
+추세 확인으로 이런 일회성 오분류가 어느 정도 걸러졌지만, `core.py`는
+프레임 단위로 바로 반영하는 구조라 그대로 노출된 것.
+
+**주의할 점**: 43번에서 "OCR이 읽은 숫자를 무조건 신뢰하면 안 된다"는 걸
+이미 한 번 겪었음 (실제 4강의실 표지판을 OCR이 "강의실2"로 잘못 읽어서
+room2로 잘못 정정된 사례). 그래서 이번엔 OCR을 무조건 신뢰하는 대신:
+- OCR이 "3"을 읽으면 - YOLO는 애초에 3을 낼 수 없는 클래스라 오판 리스크가
+  없으므로 즉시 신뢰 (기존과 동일)
+- OCR이 "2"/"4"를 읽었는데 YOLO 라벨과 다르면 - 한 프레임의 오독만으로
+  뒤집지 않고, **같은 불일치(같은 YOLO 라벨 + 같은 OCR 숫자)가 연속으로
+  한 번 더 나와야만** 정정하도록 2프레임 확인 로직 추가 (`core.py`의
+  `_ocr_disagreement`, `Locator.ocr_confirm_frames=2`와 동일한 관례를
+  재사용).
+
+**변경 파일**: `pipeline/core.py`의 `_resolve_location()`에
+`_DIGIT_TO_SIGN_LOCATION={"2":"room2","4":"room4"}` 매핑과 2프레임 확인
+스트릭(`self._ocr_disagreement`) 추가.
+
+**한계**: 이 스트릭은 객체별이 아니라 파이프라인 전체에 1개만 있어서,
+극히 드물게 서로 다른 두 물체가 우연히 같은 (YOLO 라벨, OCR 숫자) 조합을
+연속으로 내면 잘못 정정될 수 있음 - 이론적 엣지 케이스이고 실사용
+빈도로는 무시 가능하다고 판단해 더 복잡한 객체별 추적은 넣지 않음.
+
+**검증**: `testvideo.mp4` 재검증 - `object_matches`에 잡히는 위치 이름
+`{logo, room2, room3, room4, rear_door}` 그대로 유지(회귀 없음), 프레임
+940의 그 일회성 불일치는 2프레임 확인을 통과하지 못해 정정되지 않고
+넘어감(정확히 의도한 동작 - 바로 다음 관측 구간인 프레임 980부터는 YOLO
+자체가 이미 정확하게 room2로 분류해서 문제 없음).
+
+## 46. 45번 수정 후에도 "여전히 2강의실을 4강의실로 읽는다" - 진짜 원인은 박스 라벨 미반영 (2026-09-17)
+
+45번 수정을 적용했는데도 사용자가 "아직도 2강의실을 4강의실로 읽는다"고
+재보고. 재조사 결과 **두 가지가 겹쳐 있었음**:
+
+1. **박스 라벨이 정정을 반영 안 함 (진짜 원인)**: `_resolve_location()`이
+   정정된 `Location`을 반환해도, 화면에 박스와 함께 찍히는 텍스트는
+   `image_utils.draw_detections()`가 원본 `Detection.class_name`(YOLO가
+   내놓은 그대로, 즉 오분류된 "room4")을 그대로 씀 - `process_image()`가
+   `candidates`/`match`에는 정정된 `Location`을 넣어줬지만, 정작
+   `FrameResult.detections`(박스 그리는 데 쓰는 리스트)의 `Detection`
+   객체 자체는 안 건드렸던 것. 그래서 "인식된 객체: X" 캡션 문구는
+   맞게 나와도, 박스 옆 라벨은 여전히 YOLO의 원래(틀린) 이름으로 남아있어
+   사용자 눈엔 "여전히 4강의실로 읽는다"로 보였음.
+   **해결**: `process_image()`에서 위치가 정정되면 `det.class_name`
+   자체를 `location.name`으로 갱신 (`Detection`은 `@dataclass`라 그대로
+   변경 가능) - 박스 라벨과 캡션 문구가 항상 같은 이름을 쓰게 통일.
+2. **2프레임 확인 스트릭이 OCR 실패로 거의 안 쌓임**: 45번의
+   `_ocr_disagreement` 로직이 OCR이 `None`(글자를 못 읽음)을 반환하면
+   스트릭을 초기화해버렸는데, EasyOCR이 이 표지판에서 글자를 못 읽는
+   비율이 꽤 높아서(헤드리스 재생 로그 기준 상당수 프레임이 `ocr_digit=None`),
+   실제로는 지속되는 오분류여도 "연속 두 번 같은 숫자"에 거의 도달하지
+   못했을 가능성이 큼. **해결**: OCR이 못 읽은 프레임(`None`)에서는
+   스트릭을 유지하도록 변경 (YOLO와 일치하거나 다른 숫자로 바뀔 때만
+   초기화) - 정보가 없을 뿐이지 "불일치가 없어졌다"는 뜻은 아니므로.
+
+**검증**: 같은 헤드리스 스크립트로 `Detection.class_name`과
+`MatchResult.location.name`이 모든 프레임에서 항상 일치하는지 확인 -
+불일치 0건. 기존 인식 위치 집합(`{logo, room2, room3, room4, rear_door}`)도
+그대로 유지되어 회귀 없음.
+
+## 47. "회의실" 표지판 오인식 필터 추가 + 진짜 근본 원인 발견: LocationLocker의 3초 잠금 (2026-09-17)
+
+사용자가 준 실제 스냅샷(`20260917_212704_room4_score78.jpg`)을 분석하다가
+새 문제를 발견: 같은 프레임에 "4 회의실(Meeting Room)" 표지판과 실제
+"2 강의실(Class Room)" 표지판이 동시에 잡혔는데, **둘 다 YOLO가
+`room4`(2_class/4_class)로 분류**하고 있었음. 회의실 표지판은 강의실
+표지판과 생김새(검은 명판+큰 숫자+두 줄 텍스트)가 거의 똑같아서 YOLO가
+구분을 못 하는 것.
+
+**47-1 해결(회의실 필터)**: `ocr_verify.py`에 `read_sign_info()` 신설 -
+기존 `read_digit()`(숫자만 추출)과 달리 한 번의 OCR 호출로 (숫자, 회의실
+여부)를 같이 반환. `core.py`의 `_resolve_location()`에서 OCR 텍스트에
+"회의"가 포함되면(`OcrVerifier.verify()`의 기존 판정 기준 재사용) 그
+탐지를 위치 후보에서 아예 제외하도록 변경. 실제 스냅샷으로 재검증 -
+회의실 표지판이 더 이상 room4로 매칭 안 됨(`BEST: None`) 확인.
+
+**47-2. 그런데도 "아직도 4강의실로 인식한다"는 재보고 → 진짜 근본 원인
+발견**: `testvideo.mp4`의 해당 구간(프레임 940 부근, 39초 지점)을
+`realtime_pipeline.py`와 완전히 동일하게 `LocationLocker`까지 포함해서
+재생해봄. 회의실 필터를 적용해도 여전히 문제가 있었는데, 원인은
+전혀 다른 곳(`pipeline/locking.py`)에 있었음:
+
+- 프레임 940에서 회의실 표지판은 걸러지지만, 남은 "2강의실"(YOLO
+  오분류, OCR은 "2" 정확히 읽음)이 **아직 확정 전(2프레임 중 1번째
+  불일치)**이라 45번 항목 로직에 따라 YOLO의 원래(틀린) 라벨 `room4`를
+  그대로 돌려주고 있었음.
+- 문제는 `LocationLocker`(`min_lock_seconds=3.0`) - 이 "아직 미확정"
+  상태인 `room4`를 그냥 하나의 정상적인 새 위치 전환으로 받아들여서
+  **3초간 화면을 잠가버림**. 그 사이(39.17s~42.17s)에 실제 정답인
+  `room2`가 40.83초에 들어와도 **잠금 때문에 완전히 무시됨** - 3초
+  잠금이 풀린 42.29초가 돼서야 겨우 `room2`로 전환됨(약 1.5초 지연).
+  실사용 환경에서 카메라가 더 빨리 지나가면 잠금이 안 풀릴 때까지 표지판
+  자체가 화면에서 사라져서 **room2가 영영 안 뜨는 경우**도 충분히 가능함.
+
+**해결**: `_resolve_location()`에서 "아직 확정 전인 첫 번째 불일치"일 때
+YOLO의 원래(불확실한) 라벨을 반환하던 것을 **`None`(모르겠음)으로
+반환**하도록 변경 - 확정 전인 탐지는 애초에 위치 후보로도, `LocationLocker`의
+잠금 대상으로도 들어가지 않게 함. (2번째로 같은 불일치가 재확인되면
+여전히 정상적으로 정정된 위치를 반환함 - 그 경로는 안 건드림.)
+
+**검증**: `LocationLocker`를 포함한 전체 재생(`testvideo.mp4`, 실제 fps
+24 기준)으로 화면에 표시될 문구 전환 시점을 비교:
+```
+수정 전: ... 39.17s SHOWN=room4(오답, 확정 전인데 잠금 걸림) → 42.29s SHOWN=room2 (1.5초 지연)
+수정 후: ... 40.83s SHOWN=room2 (오답 없이 곧바로 정답)
+```
+전체 영상 재생 결과도 `logo(1.88s) → room4(10.00s, 진짜) → room3(25.83s,
+진짜) → room4(28.96s, OCR 실패로 여전히 남아있는 별개 이슈) → room2(40.83s,
+이번에 고침) → rear_door(52.92s)`로, 이번에 고친 부분 외엔 회귀 없음.
+
+**남은 별개 이슈(미해결)**: 28.96초의 `room4`는 사실 3강의실 구간에서
+OCR이 "3"을 못 읽은 프레임에 YOLO의 원래 라벨이 그대로 노출된 것(45번
+항목의 "정보 없음 → 스트릭 유지, 라벨은 그대로 신뢰" 경로) - 이번 47번
+수정과는 다른 케이스라 손대지 않음. 필요하면 다음에 확인할 것.
+
+## 48. distance_data로 거리 계산 공식 재검증 (2026-09-17)
+
+18~19번 항목에서 이식한 `seojiwoo/locator.py`(핀홀 공식 기반 `_distance()`)가
+실제로 `src/classroom_locator/landmark_locator/locator.py`에 그대로 반영돼
+있고, `pipeline/grid_tracker.py` → `realtime_pipeline.py`/
+`webapp/backend/vision_bridge.py`에 실제로 연결돼 있는지, 그리고 공식
+자체가 정확한지 바탕화면 `distance_data`(파일명이 실제 거리(m))로
+재검증함. `models/yolo/final_best.pt`로 15장 전체 추론 후 컨피던스
+게이트 없이(원시 박스 기준) 예측 거리/실제 거리 비율을 계산:
+
+```
+front_door (n=3): 예측/실제 = 0.901 ± 0.022  (이상적 f_norm ~0.94, 현재 0.85)
+rear_door  (n=5): 예측/실제 = 1.047 ± 0.037  (이상적 f_norm ~0.81)
+sign       (n=6): 예측/실제 = 1.011 ± 0.078  (이상적 f_norm ~0.84, 현재값과 거의 일치)
+```
+
+표준편차가 다 작아서 **공식(1/bbox크기에 선형) 자체는 정확히 반영되어
+잘 동작함**을 확인. 다만 `f_norm`을 전역 값 하나로 공유하다 보니
+`front_door`만 약 10% 과소추정 오차가 있음 (사용자 판단: 오차가 크지
+않고 `near_m=3.0` 판정에 실질 영향이 제한적이라 지금은 보정 보류).
+
+**별개로 발견한, 공식보다 더 중요한 문제**: 실제 운영값인
+`sign_conf=0.65`(표지판 전용 컨피던스 임계값, `grid_tracker.py`가 별도
+kwargs를 안 넘겨서 `Locator` 기본값 그대로 씀) 기준으로는, 표지판이
+0.9m보다 멀면 컨피던스가 0.03~0.19까지 떨어져서 **거의 탐지 자체가
+안 됨** (`sign_0.9.jpg`만 conf=0.72로 통과, 나머지 6장은 0.65 미달).
+즉 거리 공식은 맞지만 표지판은 근접 판정(`near_m=3.0`)까지 갈 일이
+컨피던스 게이트에 막혀 거의 없음 - 14번 항목에서 이미 확인된 "표지판
+소객체 탐지 recall이 낮다"는 문제와 같은 근본 원인. 사용자 판단: 이번엔
+원인 파악까지만 하고 `sign_conf` 조정이나 재학습 등 조치는 보류
+(장기적으로는 표지판 소객체 학습 데이터를 더 확보해 재학습하는 게
+근본 해결책으로 보임).
+
+## 49. "2강의실은 인식되는데 지도 위치가 안 바뀐다" 원인 규명 + min_votes 3으로 하향 (2026-09-17)
+
+사용자가 실사용 중 room2(2강의실)만 화면 박스로는 잡히는데 격자 지도
+위치가 안 바뀌는 문제를 보고함. `testvideo.mp4`(바탕화면)로
+`LandmarkGridPositionTracker.update_from_frame()`을 프레임 단위로 그대로
+재생하며 `Locator.buf`(최근 5프레임 투표 버퍼)를 직접 찍어 원인을 확인함.
+
+**48번 항목의 `sign_conf` 문제와는 다른, 별개의 원인**: 41.5~43.25초
+구간에서 2_class가 컨피던스 0.71~0.76으로 **충분히 잘 잡혔지만**, 표지판이
+화면에 머무른 시간이 약 1.7초뿐이었고 그 짧은 구간 중간에 한 프레임을
+놓쳐서(42.00초) `min_votes=4`(window=5, 최근 5프레임 중 4프레임 이상 같은
+랜드마크여야 확정)를 한 번도 못 채우고 매번 votes 2~3에서 리셋됨 -
+`reason='votes X/5'`가 계속 4 미만에 머무는 로그로 확인. 카메라가 표지판
+앞을 빠르게 지나가는 경우, 컨피던스가 충분해도 투표 안정화 문턱 자체가
+너무 엄격해서 위치 갱신을 놓칠 수 있음을 실제 영상으로 확인한 것.
+
+**해결**: 사용자 선택에 따라 [locator.py](../src/classroom_locator/landmark_locator/locator.py)의
+`Locator.__init__` 기본값 `min_votes=4` → `min_votes=3`으로 하향. 이 기본값을
+그대로 쓰는 `realtime_pipeline.py`/`webapp/backend/vision_bridge.py`의
+`live_tracker`에 자동 반영됨. `min_votes`를 명시적으로 넘기는 곳
+(`photo_tracker`의 `min_votes=1`, `scripts/run_landmark_demo.py`의 CLI
+`--min_votes` 기본값 4)은 영향 없음.
+
+**검증**: 같은 영상으로 같은 구간 재생 → 42.25초에 votes 3/5을 채워 OCR
+2연속 확인까지 통과하고, 42.50초에 `current_location`이 실제로 `room2`,
+`cell=(13, 0)`로 갱신되는 것을 확인함 (수정 전엔 이 구간 전체에서 room2가
+한 번도 지도에 반영되지 않았음). 그 외 구간(logo/room4/room3/rear_door
+전환)은 회귀 없이 그대로 동작.
+
+**트레이드오프**: 오탐 억제력이 min_votes=4 대비 약간 줄어듦(5프레임 중
+3프레임만 같아도 후보로 인정). 표지판 쪽은 `ocr_confirm_frames=2`(OCR
+2연속 확인)가 별도로 남아 있어 완전히 무방비해지지는 않음. 문/로고처럼
+OCR이 없는 클래스는 이 완화의 영향을 더 직접적으로 받으므로, 향후 오탐이
+늘어나는지 관찰 필요.
+
+### 49-1. min_votes만으로는 부족 → sign_conf도 0.65→0.5로 하향 (2026-09-17)
+
+49번 수정 후에도 사용자가 "여전히 room2 위치가 지도에 안 바뀐다"고 재보고.
+재현해보니 직전 검증이 실제 조건과 안 맞았던 게 원인이었음: 처음엔
+디버그 스크립트를 6프레임 간격(stride=6)으로 샘플링해서 우연히 감지되는
+프레임을 잘 맞혔던 것뿐이고, **실제 앱의 `process_every_n_frames: 5`
+(24fps 기준 0.21초 간격)로 다시 재현하면 room2가 여전히 안 바뀜**을 확인함.
+
+**진짜 원인**: `Locator.detect()`를 스트라이드 없이 원본 프레임 전부에
+대해 돌려보니(`sign_conf=0.65` 기준), 표지판이 화면에 보이는 약 2.6초
+구간(라 130프레임) 중 실제로 conf 0.65를 넘겨 잡히는 프레임이 10개
+안팎(~8%)뿐이었음. 5프레임마다 1번만 보는 실제 앱의 샘플링이 하필 이
+"미검출 공백" 구간에 거의 다 걸려서, `min_votes`를 아무리 낮춰도 애초에
+5프레임 투표 윈도우 안에 감지 자체가 거의 안 들어옴 - 48번 항목에서
+distance_data로 이미 확인했던 "표지판이 sign_conf=0.65 근처에서 불안정하게
+검출된다"는 문제가 실제 영상에서도 그대로 재현된 것.
+
+**해결**: `Locator.__init__`의 `sign_conf` 기본값을 `0.65` → `0.5`로 하향
+(사용자 선택 - process_every_n_frames를 낮추는 대안은 이중 추론 중인
+`realtime_pipeline.py` 구조상 연산량이 2.5배 늘어 보류). 원본 프레임
+전부를 다시 찍어보니 같은 2.6초 구간에서 conf 0.5 이상으로 잡히는
+프레임이 훨씬 촘촘해졌고(거의 연속), `process_every_n_frames=5` 샘플링도
+5프레임 윈도우 안에서 3표 이상을 안정적으로 채움. 같은 구간 재검증 →
+`t=49.17s`부터 `cur_loc=room2, cell=(13,0)`로 정상 갱신 확인, 나머지 구간도
+회귀 없음.
+
+**교훈**: 이번처럼 실제 프로덕션 스트라이드(`process_every_n_frames`)와
+다른 샘플링 간격으로 재현 테스트를 하면, 우연히 감지 프레임을 더 잘
+맞혀서 "고쳐진 것처럼" 보이는 거짓 양성 검증이 나올 수 있음 - 항상
+`configs/default.yaml`의 실제 값(현재 5)으로 재현해서 검증할 것.
+
+### 49-2. sign_conf 하향의 부작용: room3/room4 오탐(깜빡임) 증가 → room3 판정에 디바운스 추가 (2026-09-17)
+
+49-1에서 `sign_conf`를 낮춘 뒤 사용자가 "room2는 이제 되는데 4강의실/
+3강의실 쪽에서 오탐이 늘었다"고 재보고. 재현해보니
+[grid_tracker.py](../src/classroom_locator/pipeline/grid_tracker.py)의
+room3 즉시반영 경로(표결 문턱을 우회해서 OCR이 "3"을 읽은 **그 프레임
+단 한 번만으로** room3로 바로 튀는 로직, 원래 있던 설계)가 원인이었음.
+`sign_conf`를 낮추기 전에는 표지판 자체가 드물게 잡혀서 OCR 호출 빈도가
+낮았지만, 지금은 표지판이 거의 매 분석 프레임마다 잡히면서 OCR 호출도
+그만큼 잦아졌고, 그중 한 프레임이라도 "3"으로 오독하면 즉시 room3로
+튀었다가 다음 프레임에 다시 room4로 돌아오는 왕복이 훨씬 잦아짐. 같은
+`testvideo.mp4` 25.83~30.21초 구간을 재생해보니, 이번 수정 전엔 이
+구간에서만 room3↔room4가 7번 왕복함을 확인.
+
+**해결**: `LandmarkGridPositionTracker`에 `_room3_digit_streak`(연속으로
+"3"이 읽힌 횟수) 카운터를 추가하고, room3 즉시반영 경로와 표결 통과 후
+최종 위치 이름 결정 두 곳 모두 `_room3_required_streak`(연속 프레임
+확인 필요 횟수) 이상 연속으로 "3"이 읽혀야만 room3로 인정하도록 변경.
+이 문턱은 트래커의 `window`에 따라 다르게 둠:
+- 실시간 트래커(`window=5`, 여러 프레임이 있음): `_room3_required_streak=2`
+  (연속 2프레임 확인)
+- `webapp/backend/vision_bridge.py`의 `photo_tracker`(`window=1`, 사진
+  한 장짜리 단발 판정이라 "다음 프레임"이 없음): `_room3_required_streak=1`
+  (기존과 동일하게 즉시 신뢰 - 안 그러면 사진 업로드에서 room3를 영영
+  못 잡게 됨)
+
+부가로, 기존엔 같은 프레임에 대해 OCR 숫자 판독(`_read_sign_digit`)을
+즉시반영 경로와 `resolve_location_name()` 두 곳에서 각각 따로 호출해서
+프레임당 OCR을 2번 부르고 있었는데, 이번에 한 번만 불러서 공용으로 쓰도록
+정리함(호출 횟수 절감 + 두 경로가 서로 다른 판독 결과를 쓸 가능성 제거).
+
+**검증**: 같은 25.83~30.21초 구간 재생 → room3↔room4 왕복이 7번에서
+27.92초 이후 room4로 안정되기까지 2번으로 줄어듦(완전히 0으로 없어지진
+않음 - OCR 판독 자체의 노이즈가 남아있는 한 프레임 단위 미세한 흔들림은
+있을 수 있음). 27.92초 이후 room4로 유지되는 건 47번 항목에서 이미 확인된
+"OCR이 3을 연속으로 못 읽는 구간엔 YOLO 원래 라벨(room4)로 남는다"는
+별개의 기존 이슈와 같은 현상이라 이번 수정 범위 밖(그 구간의 실제 정답은
+room3). room2/rear_door 전환 등 나머지 구간은 회귀 없음.
+
+### 49-3. room3 진입만 디바운스했더니 이탈 쪽에서 여전히 오탐 → 양방향 히스테리시스로 확장 (2026-09-17)
+
+49-2 적용 후에도 사용자가 "아직도 오탐이 존재한다"고 재보고. 49-2의
+디바운스는 **room3로 들어갈 때만**(즉시반영 경로) 연속 확인을 요구했고,
+표결 통과 후 최종 이름을 정하는 쪽(`name = "room3" if room3_confirmed
+else _YOLO_CLASS_TO_LOCATION_NAME.get(...)`, 옛 코드)은 매 프레임 새로
+읽은 값을 바로 썼음 - 그래서 room3가 이미 확정된 상태에서 단 한 프레임만
+"3"이 아니게 읽혀도(OCR 노이즈) 즉시 room4로 되돌아갔다가 다음 프레임에
+다시 room3로 돌아오는 왕복이 여전히 남아있었음.
+
+**해결**: room3 전용 스트릭(`_room3_digit_streak`)을 없애고, room2/room3/
+room4 어느 쪽이든 공통으로 쓰는 `_resolved_sign_name`(확정된 이름) +
+`_sign_name_streak_value`/`_sign_name_streak_count`(직전 raw_name과 그
+연속 횟수)로 일반화함. 매 프레임 raw_name(YOLO 라벨, 단 OCR이 "3"을 읽으면
+"room3")을 구하고, **같은 raw_name이 연속 `_sign_name_required_streak`
+(실시간 트래커 2, `photo_tracker`는 여전히 1)번 나와야만** `_resolved_sign_name`을
+그 값으로 갱신 - room3로 들어갈 때뿐 아니라 나갈 때도 동일하게 적용됨.
+이 `resolved_sign_name`을 표결 우회 경로와 표결 통과 후 최종 이름 결정
+양쪽에 공용으로 씀.
+
+**검증**: 같은 25.83~39.79초 구간 재생 → 이전엔 room3 구간 안에서도
+여러 번 흔들렸는데, 이번엔 전 구간이 room3로 안정적으로 유지되고
+27.92~28.12초 사이에 room4로 딱 한 번(2틱)만 흔들렸다가 28.33초에
+다시 room3로 복귀함 - 왕복이 사실상 1회로 줄어듦. room2(49.17s)/
+rear_door(60.42s) 전환도 회귀 없이 그대로 동작.
+
+**남은 한계**: 완전히 0은 아님 - OCR이 우연히 연속 2프레임 동일하게
+오독하면 여전히 짧게 흔들릴 수 있음. 실사용에서 계속 거슬리면
+`_sign_name_required_streak`를 2→3으로 올리는 걸 다음 단계로 고려
+(단, 그만큼 진짜 전환 반응 속도도 느려짐 - 트레이드오프).
+
+### 49-4. "확정되면 최소 1초는 유지"하는 위치 잠금 추가 (2026-09-17)
+
+49-3 적용 후에도 사용자가 "4강의실→3강의실 전환 중 3강의실로 인식된 뒤
+잠깐 4강의실로 바뀌었다가 다시 3강의실로 돌아온다"고 재보고하며, "한 번
+갱신되면 최소 1초는 그 장소에 머무르게" 명시적으로 요청함. 기존
+히스테리시스(49-3)는 "raw_name이 연속 2프레임 나와야 확정"까지만 다뤄서,
+2연속 오독이 우연히 겹치면 여전히 통과할 수 있었음.
+
+**구현**: `GridPositionTracker`(부모 클래스, `LandmarkGridPositionTracker`가
+상속)의 `_apply()`에 위치 잠금을 추가. `pipeline/locking.py`의
+`LocationLocker`(OCR 텍스트 매칭 경로, `min_lock_seconds=3.0`)와 같은
+목적이지만, 격자 위치 경로는 이미 votes/히스테리시스로 어느 정도
+안정화돼 있어 `MIN_LOCATION_LOCK_SECONDS = 1.0`(모듈 상수)로 짧게 둠.
+
+처음엔 "전환된 순간부터 고정 1초"로 구현했는데, 재검증해보니 room3가
+전환 후 2초 넘게 계속 재확인되고 있어도 "전환 시점 + 1초"가 지나면
+잠금이 이미 풀려서 그 뒤에 들어오는 단발 오탐(room4)을 못 막는 문제가
+있었음(27.92초에 여전히 통과). **그래서 같은 위치가 재확인될 때마다
+`_locked_until`을 `now + min_lock_seconds`로 매번 연장하도록 수정** -
+"전환 후 고정 1초"가 아니라 "그 위치가 계속 확인되고 있는 한, 마지막
+확인 시점으로부터 최소 1초는 다른 곳으로 못 바뀐다"는 규칙이 됨.
+
+`photo_tracker`(웹앱 사진 한 장 판정, `window<=1`)는 서로 무관한 사진이
+매번 새로 들어오므로, 이전 사진의 잠금이 다음 사진 판정을 막지 않도록
+`min_lock_seconds=0.0`으로 꺼둠 (`LandmarkGridPositionTracker.__init__`에서
+`_sign_name_required_streak`를 1로 낮춘 것과 같은 이유).
+
+**검증**: 같은 25.83~39.79초 구간 재생 → 이전엔 27.92~28.33초에 room4로
+흔들리던 게, 이번엔 전 구간이 room3로 완전히 안정적으로 유지됨(흔들림
+0회). room2(49.17s)/rear_door(60.42s) 전환도 잠금에 막히지 않고 정상
+동작 확인 - 이는 room2/rear_door로의 전환 시점에는 이미 이전 위치(room3/
+room2)가 재확인 안 된 지 오래(수 초)라 잠금이 자연히 풀려있었기 때문.

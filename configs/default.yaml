@@ -1,8 +1,11 @@
 # classroom-locator 전역 설정
-# 2026-09-17: OCR 완전 배제 결정. room2/room4까지 YOLO가 이미지만으로 직접
-# 분류하는 방식으로 전환 (test_sample 평가에서 OCR 방식보다 훨씬 안정적임을
-# 확인함 - docs/setup_log.md 14~15번 참고). ocr 섹션은 target_classes에
-# "sign"이 없으면 자동으로 초기화 자체를 건너뜀 (core.py 참고).
+# 2026-09-17: OCR 완전 배제 결정 -> 이후 재도입. room2/room4는 YOLO가
+# 이미지만으로 직접 분류하는 방식을 그대로 쓰되(test_sample 평가에서 OCR
+# 전체 대체 방식보다 훨씬 안정적임을 확인함 - docs/setup_log.md 14~15번
+# 참고), room3 정정용으로만 좁게 OCR을 다시 들여왔음(같은 날 저녁 - 메인
+# 화면에서도 room3/로고가 안 보인다는 요청). 표지판 글자는 근접 판정 시
+# classroom_locator.landmark_locator.ocr_verify.OcrVerifier(build_verifier/
+# read_digit)를 pipeline/core.py와 pipeline/grid_tracker.py가 공용으로 씀.
 #
 # final_best.pt로 교체함 (best_yolo_only.pt보다 test_sample 평가에서 더
 # 좋았음 - Macro F1 0.850 vs 0.821, docs/setup_log.md 15번 참고). 이 모델은
@@ -16,19 +19,12 @@ detector:
   class_name_map:
     "2_class": "room2"
     "4_class": "room4"
-  # room2/room4(YOLO 직접분류) + front_door/rear_door/water_dispenser. "sign" 없음 = OCR 미사용
-  target_classes: ["room2", "room4", "front_door", "rear_door", "water_dispenser"]
-
-ocr:
-  backend: easyocr             # "easyocr" | "paddleocr" | "tesseract"
-  lang: ["ko", "en"]
-  min_confidence: 0.4
+  # room2/room4(YOLO 직접분류, OCR로 room3 정정) + front_door/rear_door/logo.
+  # water_dispenser(정수기)는 2026-09-17부터 인식 대상에서 제외함 (사용자 요청).
+  target_classes: ["room2", "room4", "front_door", "rear_door", "logo"]
 
 localization:
   locations_file: configs/locations.yaml
-  # OCR 텍스트와 위치 이름을 비교할 때 허용할 최소 유사도 (0~100, rapidfuzz 기준)
-  # 실제 영상에서 OCR이 "실"을 "신"으로 오인식하는 등 노이즈가 있어 70은 너무 엄격해서 55로 낮춤
-  match_threshold: 55
 
 pipeline:
   # 배치 모드에서 처리할 이미지 확장자
@@ -44,10 +40,10 @@ realtime:
   # N 프레임마다 한 번씩만 탐지/OCR 수행 (성능을 위해)
   process_every_n_frames: 5
   # 위치가 바뀔 때마다 그 순간 화면을 outputs/results/realtime_snapshots/에 저장.
-  # 실행할 때 --snapshot / --no-snapshot 으로도 덮어쓸 수 있음.
-  save_snapshots: true
-  # 격자 지도(현재 위치) 창 표시 여부. --grid-map / --no-grid-map 으로도 덮어쓸 수 있음.
-  show_grid_map: true
+  # 실행할 때 --snapshot / --no-snapshot 으로도 덮어쓸 수 있음 (기본 꺼짐).
+  save_snapshots: false
+  # 격자 지도(현재 위치) 창 표시 여부. --grid-map / --no-grid-map 으로도 덮어쓸 수 있음 (기본 꺼짐).
+  show_grid_map: false
 
 logging:
   level: INFO

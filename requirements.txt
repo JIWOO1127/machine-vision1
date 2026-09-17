@@ -8,12 +8,6 @@ PyYAML==6.0.3
 Pillow==12.3.0
 tqdm==4.70.1
 
-# 텍스트 유사도 매칭 (OCR 결과 ↔ 위치 이름 매칭에 사용)
-rapidfuzz==3.14.6
-
-# 복도/평면도 시각화 (scripts/visualize_map.py)
-matplotlib==3.11.2
-
 # 테스트
 pytest==9.1.1
 
@@ -28,16 +22,8 @@ ultralytics==8.4.152
 torch==2.6.0
 torchvision==0.21.0
 
-# ── OCR 백엔드 (easyocr 사용 중) ────────────────────────────────
+# ── OCR (easyocr, 근접 판정 시 3강의실 정정용 - classroom_locator.seojiwoo.ocr_verify) ──
 easyocr==1.7.2
-
-# [선택] PaddleOCR (한글 포함 다국어 인식 정확도 우수, 현재 미사용)
-# paddlepaddle>=2.6
-# paddleocr>=2.7
-
-# [선택] Tesseract (가볍지만 한글 정확도 상대적으로 낮음, 현재 미사용)
-# pytesseract>=0.3.10
-# (시스템에 tesseract-ocr 엔진 + 한글 언어팩(tesseract-ocr-kor) 별도 설치 필요)
 
 # [선택] scripts/run_seojiwoo_demo.py (classroom_locator.seojiwoo)의 --tts 옵션에만 필요
 # pyttsx3>=2.90

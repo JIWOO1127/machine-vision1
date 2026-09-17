@@ -36,29 +36,6 @@ def put_korean_text(
     return cv2.cvtColor(np.asarray(canvas), cv2.COLOR_RGB2BGR)
 
 
-def crop_bbox(image: np.ndarray, bbox: tuple[int, int, int, int], margin: int = 5) -> np.ndarray:
-    """bbox 영역을 약간의 여백(margin)을 두고 crop합니다."""
-    h, w = image.shape[:2]
-    x1, y1, x2, y2 = bbox
-    x1 = max(0, x1 - margin)
-    y1 = max(0, y1 - margin)
-    x2 = min(w, x2 + margin)
-    y2 = min(h, y2 + margin)
-    return image[y1:y2, x1:x2]
-
-
-def upscale_for_ocr(image: np.ndarray, min_height: int = 120) -> np.ndarray:
-    """crop된 표지판 이미지가 너무 작으면(멀리서 찍혀서 글자가 몇 픽셀 안 됨)
-    OCR이 인식을 못 하는 경우가 많아서, 세로 길이가 min_height보다 작으면
-    비율을 유지한 채 확대합니다.
-    """
-    h, w = image.shape[:2]
-    if h == 0 or h >= min_height:
-        return image
-    scale = min_height / h
-    return cv2.resize(image, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_CUBIC)
-
-
 def draw_detections(
     image: np.ndarray,
     detections: list[Detection],

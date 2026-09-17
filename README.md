@@ -1,74 +1,55 @@
 # classroom-locator
 
-YOLO(객체 탐지) + OCR(문자 인식)을 이용해 강의실 표지판 사진을 분석하고,
-인식된 표지판 텍스트를 미리 정의한 위치 정보와 매칭하여 **현재 위치를 추적**하는 프로젝트입니다.
+YOLO(객체 탐지) + OCR(문자 인식)로 강의실 표지판/문/로고를 인식해 복도 위
+**현재 위치를 추적**하고 다음 목적지까지 안내하는 프로젝트입니다.
 
-- 웹캠으로 실시간 프레임을 받아 처리하는 모드
-- 미리 촬영한 사진 폴더를 배치로 처리하는 모드
-
-두 가지를 모두 지원하도록 구성했고, YOLO/OCR 라이브러리는 아직 미정이어도
-바로 개발을 시작할 수 있도록 **추상 인터페이스 + 어댑터(구현체) 교체 구조**로 설계했습니다.
+- `src/classroom_locator/` — 핵심 판정 로직. 웹캠/영상 재생으로 CLI에서 바로 실행
+- `webapp/` — 같은 판정 로직을 실시간 카메라 + 사진/영상 업로드로 쓰는 폰 브라우저용 웹 UI
 
 ## 폴더 구조
 
 ```
 classroom-locator/
-├── .vscode/                 # VSCode 실행/설정 (launch.json, settings.json 등)
-├── configs/                 # 설정 파일 (yaml)
-│   ├── default.yaml         # detector/ocr backend, 임계값 등 전역 설정
-│   └── locations.yaml       # "표지판 텍스트 → 위치" 매핑 데이터
+├── .vscode/                     # VSCode 실행/설정 (launch.json, settings.json 등)
+├── configs/
+│   ├── default.yaml             # detector/localization/realtime 등 전역 설정
+│   └── locations.yaml           # 위치별 grid_cell/snap_distance_m/안내 문구
+│                                 # (root CLI와 webapp이 이 파일 하나를 공용으로 읽음)
 ├── data/
-│   ├── raw/                 # 원본 사진/영상 (배치 모드 입력)
-│   ├── processed/           # 전처리된 이미지
-│   ├── annotations/         # YOLO 학습용 라벨(txt) 등
-│   ├── dataset/             # Roboflow에서 export한 학습용 데이터셋(train/valid/test)
-│   └── eval/                # 영상 성능 평가용 정답(ground truth) 타임라인 CSV
+│   ├── raw/                     # 원본 사진/영상 (배치 모드 입력)
+│   ├── processed/                # 전처리된 이미지
+│   ├── annotations/              # YOLO 학습용 라벨(txt) 등
+│   └── dataset/                  # 학습용 데이터셋(train/valid/test)
 ├── models/
-│   ├── yolo/                # YOLO 가중치 파일 (.pt 등)
-│   └── ocr/                 # OCR 관련 모델/가중치 (필요 시)
-├── notebooks/                # 데이터 탐색, 실험용 주피터 노트북
-├── src/classroom_locator/    # 핵심 파이썬 패키지
-│   ├── detection/            # YOLO 등 객체 탐지 모듈 (추상화)
-│   ├── ocr/                  # OCR 모듈 (추상화)
-│   ├── localization/         # 인식 텍스트 → 위치 매칭 로직
-│   ├── pipeline/             # 실시간/배치 파이프라인 조립, 위치 잠금 로직
-│   ├── utils/                 # 공용 유틸 (이미지, 로깅, 지도 시각화 등)
-│   ├── evaluation.py          # 영상 기반 성능 평가(F1/혼동행렬/latency/FPS/커버리지)
-│   └── config.py              # 설정 로더
-├── scripts/                  # CLI 실행 스크립트 (진입점)
-│   ├── run_realtime.py       # 웹캠/영상 실시간 실행 + 성능 평가 모드
-│   ├── run_batch.py          # 사진 폴더 배치 실행
-│   ├── train_yolo.py         # YOLO 학습 스크립트
-│   ├── visualize_map.py      # locations.yaml 좌표 기반 2D 평면도 생성
-│   └── evaluate.py           # 배치(사진) 결과 정확도 평가 스크립트
-├── tests/                     # pytest 테스트
-├── outputs/                   # 실행 결과물 (로그, 결과 이미지/JSON, 평가 리포트)
-└── docs/                      # 아키텍처/설계 문서, 진행 로그(setup_log.md)
+│   ├── yolo/final_best.pt        # YOLO 가중치 - root CLI와 webapp이 이 파일 하나를 직접 참조
+│   └── ocr/                      # OCR 관련 모델/가중치 (필요 시)
+├── notebooks/                    # 데이터 탐색, 실험용 주피터 노트북
+├── src/classroom_locator/        # 핵심 파이썬 패키지
+│   ├── detection/                 # YOLO 등 객체 탐지 모듈 (추상화)
+│   ├── landmark_locator/          # 실측 물리 크기 기반 거리 추정 + 근접 시 OCR 정정 (Locator)
+│   ├── localization/               # 인식 결과 → 위치 매칭 / 지도 좌표 로직
+│   ├── pipeline/                   # 실시간·배치 파이프라인 조립, 격자 위치 추적(grid_tracker), 위치 잠금
+│   ├── utils/                      # 공용 유틸 (이미지, 로깅)
+│   └── config.py                   # 설정 로더
+├── scripts/                      # CLI 실행 스크립트 (진입점)
+│   ├── run_realtime.py           # 웹캠/영상 실시간 실행
+│   ├── run_batch.py              # 사진 폴더 배치 실행
+│   ├── run_landmark_demo.py      # landmark_locator 단독 시연 (오버레이 영상 저장, TTS 등)
+│   └── train_yolo.py             # YOLO 학습 스크립트
+├── webapp/                       # 폰 브라우저용 웹 UI
+│   ├── frontend/                 # React + Vite (촬영/영상 업로드/실시간 카메라 + TTS 음성 안내)
+│   └── backend/                  # Flask 서버
+│       ├── app.py                 # API 라우팅 (/api/analyze, /api/analyze-frame 등)
+│       ├── services/
+│       │   ├── vision_bridge.py   # src/classroom_locator 판정 로직 ↔ 프론트 JSON 응답 어댑터
+│       │   └── locations.py       # /api/locations CRUD 전용 (판정 로직과 무관한 별도 저장소)
+│       └── data/locations.json    # 위 CRUD가 쓰는 데이터
+├── tests/                        # pytest 테스트
+├── outputs/                      # 실행 결과물 (로그, 결과 이미지/JSON)
+└── docs/                         # 설계 문서, 진행 로그(setup_log.md)
 ```
 
-## 설계 포인트: 라이브러리 교체 가능한 구조
-
-YOLO 버전(YOLOv8/YOLOv5 등)과 OCR 라이브러리(EasyOCR/PaddleOCR/Tesseract 등)를
-아직 정하지 않았다는 점을 고려해서, `detection`과 `ocr` 모듈은 각각
-
-- `base.py` : 추상 클래스(인터페이스)
-- `xxx_detector.py` / `xxx_reader.py` : 실제 구현체
-- `__init__.py` : `get_detector(config)` / `get_ocr_reader(config)` 팩토리 함수
-
-로 나눠져 있습니다. `configs/default.yaml`에서 `backend` 값만 바꾸면
-코드 수정 없이 다른 라이브러리로 교체할 수 있습니다.
-
-```yaml
-detector:
-  backend: ultralytics   # or "yolov5"
-  weights: models/yolo/best.pt
-
-ocr:
-  backend: easyocr       # or "tesseract", "paddleocr"
-  lang: ["ko", "en"]
-```
-
-## 시작하기
+## 시작하기 (가상환경)
 
 conda 가상환경 이름은 **`classroom-locator`**입니다. (설치 과정에서 겪었던
 문제들과 상세 이력은 [docs/setup_log.md](docs/setup_log.md) 참고)
@@ -84,6 +65,11 @@ pip install -r requirements.txt
 pip install torch==2.6.0+cu124 torchvision==0.21.0+cu124 --index-url https://download.pytorch.org/whl/cu124
 ```
 
+루트의 이 `requirements.txt` 하나로 `src/`의 CLI 스크립트와 `webapp/`이 공용으로
+쓰는 탐지·거리추정·OCR 로직까지 전부 커버됩니다. 웹 서버(Flask)를 띄우려면
+아래 "웹 UI 실행하기"에서 `webapp/backend/requirements.txt`를 추가로 설치해야
+합니다.
+
 ```bash
 python scripts/run_batch.py --input data/raw --config configs/default.yaml
 python scripts/run_realtime.py --camera 0 --config configs/default.yaml
@@ -91,13 +77,12 @@ python scripts/run_realtime.py --camera 0 --config configs/default.yaml
 
 ## 실행 스크립트 옵션
 
-### `scripts/run_realtime.py` — 웹캠/영상 실시간 실행 + 성능 평가
+### `scripts/run_realtime.py` — 웹캠/영상 실시간 실행
 
 ```bash
 python scripts/run_realtime.py --camera 0
 python scripts/run_realtime.py --source data/raw/test_video.mp4
-python scripts/run_realtime.py --source data/raw/test_video.mp4 --no-snapshot
-python scripts/run_realtime.py --source data/raw/test_video.mp4 --eval data/eval/ground_truth_example.csv
+python scripts/run_realtime.py --source data/raw/test_video.mp4 --snapshot --grid-map
 ```
 
 | 인자 | 설명 |
@@ -105,8 +90,8 @@ python scripts/run_realtime.py --source data/raw/test_video.mp4 --eval data/eval
 | `--config PATH` | 설정 파일 경로 (기본 `configs/default.yaml`) |
 | `--camera N` | 카메라 인덱스 (설정 파일 값 덮어쓰기) |
 | `--source PATH` | 웹캠 대신 재생할 영상 파일 경로. `--camera`보다 우선함 |
-| `--snapshot` / `--no-snapshot` | 위치가 바뀔 때마다 그 순간 화면을 `outputs/results/realtime_snapshots/`에 저장할지 여부 (기본 켜짐, 설정 파일의 `realtime.save_snapshots`로도 조정 가능) |
-| `--eval PATH` | 성능 평가 모드. 정답 타임라인 CSV(`start_sec,end_sec,location`) 경로를 넘기면 화면 표시 대신 F1/혼동행렬, 응답한 것 중 정확도, 전환 반응 속도(Latency), 처리 속도(FPS), 커버리지를 계산해서 출력하고 `outputs/results/eval_report_*.json`으로 저장함. `--source` 필수 |
+| `--snapshot` / `--no-snapshot` | 위치가 바뀔 때마다 그 순간 화면을 `outputs/results/realtime_snapshots/`에 저장할지 여부 (기본 꺼짐, 설정 파일의 `realtime.save_snapshots`로도 조정 가능) |
+| `--grid-map` / `--no-grid-map` | 격자 지도 위치 창 표시 여부 (기본 꺼짐, 설정 파일의 `realtime.show_grid_map`으로도 조정 가능) |
 
 ### `scripts/run_batch.py` — 사진 폴더 배치 처리
 
@@ -118,6 +103,32 @@ python scripts/run_batch.py --input data/raw --config configs/default.yaml
 |---|---|
 | `--input PATH` | 처리할 이미지 폴더 (하위 폴더까지 재귀적으로 읽음) |
 | `--config PATH` | 설정 파일 경로 |
+
+### `scripts/run_landmark_demo.py` — landmark_locator 단독 시연
+
+```bash
+python scripts/run_landmark_demo.py --source 0 --tts
+python scripts/run_landmark_demo.py --source data/raw/test_video.mp4 --save
+python scripts/run_landmark_demo.py --source data/raw/test_video.mp4 --ocr --route front_door 4_class 2_class rear_door
+```
+
+| 인자 | 설명 |
+|---|---|
+| `--weights PATH` | 주 모델 (기본은 2026-09-17부터 logo까지 포함된 6클래스 `final_best.pt`) |
+| `--logo_weights PATH` | 로고를 별도 모델로 나눠 쓰고 싶을 때만 지정 (보통 불필요) |
+| `--source PATH` | 파일 경로 / 스트림 URL / 카메라 번호 (필수) |
+| `--stride N` | N프레임마다 1회 추론 (기본 6, 30fps 영상 기준 초당 5회) |
+| `--window N` / `--min_votes N` | 최근 N프레임 중 몇 표 이상 같아야 확정할지 (기본 5 / 4) |
+| `--sign_conf F` | 표지판(2_class/4_class) confidence 임계값 (OCR 검증과 함께 쓰므로 낮게, 기본 0.35) |
+| `--no_approach` | 접근 추세(거리가 줄어드는 중인지) 확인 조건 끄기 |
+| `--route NAME...` | 동선 순서 고정, 예: `front_door 4_class 2_class rear_door` |
+| `--near_m` / `--f_norm` / `--conf` | 근접 판정 거리(m), 거리 추정 보정 계수, 기본 confidence |
+| `--device` | `cuda`/`cpu` 등 강제 지정 (기본 자동 감지) |
+| `--save` | 오버레이 결과를 mp4로 저장 |
+| `--tts` | pyttsx3로 음성 안내 (`pip install pyttsx3` 필요) |
+| `--ocr` | 근접 시 표지판 글자 OCR 검증 (`pip install easyocr` 필요) |
+| `--merge_signs` | 2_class/4_class를 하나로 합쳐 투표하고 숫자는 OCR로만 구분 (`--ocr` 필요) |
+| `--font PATH` | 한글 표시용 폰트 경로 (기본 맑은 고딕) |
 
 ### `scripts/train_yolo.py` — YOLO 학습
 
@@ -131,21 +142,57 @@ python scripts/train_yolo.py --data data/dataset/data.yaml --model yolov8n.pt --
 | `--model NAME` | 베이스 모델/가중치 (기본 `yolov8n.pt`) |
 | `--epochs N` | epoch 수 (기본 100) |
 | `--imgsz N` | 입력 이미지 크기 (기본 640) |
+| `--project PATH` | 결과 저장 위치 (기본 `outputs/results`) |
+| `--name NAME` | 실행 이름 (기본 `sign_detector`) |
 
-### `scripts/visualize_map.py` — 2D 평면도 생성
+## 웹 UI 실행하기
 
-```bash
-python scripts/visualize_map.py --highlight room3
+### 1. 백엔드 추가 설치 (최초 1회)
+
+```powershell
+conda activate classroom-locator
+pip install -r webapp/backend/requirements.txt
 ```
 
-| 인자 | 설명 |
+루트 `requirements.txt`에는 없는 `Flask`, `flask-cors`, `imageio-ffmpeg`(결과
+영상을 폰에서 재생되는 형식으로 변환)이 추가로 설치됩니다.
+
+### 2. 프론트엔드 빌드 (최초 1회, `App.jsx`를 고칠 때마다 다시)
+
+```powershell
+cd webapp/frontend
+npm install
+npm run build
+```
+
+`npm run build`를 다시 안 하면 `webapp/frontend/dist/`가 예전 코드로 남아서,
+소스를 고쳐도 브라우저에는 반영되지 않습니다.
+
+### 3. 서버 실행
+
+```powershell
+cd webapp/backend
+python app.py
+```
+
+기본으로 `http://localhost:5000`에서 뜨고, `cloudflared`(`.tools/cloudflared.exe`
+또는 시스템 PATH)가 있으면 폰 등 외부 기기에서 접속 가능한 임시 주소도 콘솔에
+같이 출력됩니다:
+
+```
+[tunnel] 외부 접속 주소: https://xxxx.trycloudflare.com/?key=xxxxxxxx
+```
+
+이 링크를 폰 브라우저로 열면 됩니다. 서버를 켤 때 브라우저 창을 자동으로
+새로 열지는 않으니, 위 주소를 직접 열어야 합니다.
+
+| 환경변수 | 설명 |
 |---|---|
-| `--locations PATH` | 위치 데이터 파일 (기본 `configs/locations.yaml`) |
-| `--highlight NAME` | 현재 위치로 빨간색 강조할 location name |
-| `--output PATH` | 저장 경로 (기본 `outputs/results/map.png`) |
+| `PORT` | 로컬 포트 (기본 5000) |
+| `DEMO_ACCESS_KEY` | 외부(터널) 접속 시 요구할 키. 안 정해주면 실행할 때마다 자동 생성돼서 콘솔에 출력됨 |
+| `DISABLE_TUNNEL=1` | Cloudflare 터널을 켜지 않고 로컬(`http://localhost:PORT`)에서만 실행 |
 
-## 위치 매핑 데이터 만들기
-
-`configs/locations.yaml`에 강의실 표지판에 적힌 텍스트(예: "공학관 301호")를
-실제 위치 정보(건물, 층, 좌표 등)와 매핑해두면, OCR 인식 결과를 이 목록과
-비교(정확/유사 매칭)해서 현재 위치를 판별합니다. 자세한 포맷은 파일 내 주석 참고.
+실시간 카메라·사진·영상 분석 전부 `webapp/backend/services/vision_bridge.py`를
+거쳐 `src/classroom_locator`의 동일한 위치 판정 로직(`LandmarkGridPositionTracker`)을
+씁니다 - 즉 위치 데이터(`configs/locations.yaml`)와 판정 규칙은 CLI
+(`run_realtime.py --grid-map`)와 웹 UI가 완전히 동일합니다.

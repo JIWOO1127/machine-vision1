@@ -13,7 +13,7 @@ from ..localization import Location, load_grid_config
 from ..utils.image_utils import draw_detections, put_korean_text
 from ..utils.logger import setup_logger
 from .core import LocatorPipeline
-from .grid_tracker import SeojiwooGridPositionTracker, render_grid_image
+from .grid_tracker import MAP_LABELS, LandmarkGridPositionTracker, render_grid_image
 from .locking import LocationLocker
 
 MAX_DISPLAY_DIM = 900
@@ -32,11 +32,10 @@ def _resize_for_display(frame: Any, max_dim: int = MAX_DISPLAY_DIM) -> Any:
 
 
 def _build_guidance_lines(location: Location) -> list[str]:
-    name = location.display_name or location.name
-    lines = [f"현재 위치는 {name} 앞입니다."]
-    if location.guidance:
-        lines.append(location.guidance)
-    return lines
+    """위치 안내 문구 대신, 인식된 객체 이름만 짧게 보여줌 (사용자 요청,
+    2026-09-17 저녁) - 이전엔 "현재 위치는 X 앞입니다. <guidance>" 형태였음."""
+    label = MAP_LABELS.get(location.name, location.display_name or location.name)
+    return [f"인식된 객체: {label}"]
 
 
 def run_realtime(config: dict[str, Any]) -> None:
@@ -58,28 +57,23 @@ def run_realtime(config: dict[str, Any]) -> None:
     if save_snapshots:
         snapshot_dir.mkdir(parents=True, exist_ok=True)
 
-    # 격자 지도(SeojiwooGridPositionTracker) 준비: locations.yaml에 grid 설정과
+    # 격자 지도(LandmarkGridPositionTracker) 준비: locations.yaml에 grid 설정과
     # grid_cell/snap_distance_m이 있으면 활성화. 없으면(또는 --no-grid-map/
     # realtime.show_grid_map: false면) 그리드 창은 표시 안 함.
-    # 거리 판정은 external/seojiwoo_core의 Locator 로직(REAL_SIZE 실측 물리크기
-    # 기반 핀홀 거리추정 + 최근 프레임 다수결 투표 + 접근추세 확인)을 그대로
-    # 쓰고, "계산된 거리와 가장 가까운 격자점 찾기"만 우리 쪽 로직을 씀.
+    # 거리 판정은 classroom_locator.landmark_locator의 Locator 로직(REAL_SIZE 실측
+    # 물리크기 기반 핀홀 거리추정 + 최근 프레임 다수결 투표 + 접근추세 확인)을
+    # 그대로 쓰고, "계산된 거리와 가장 가까운 격자점 찾기"만 우리 쪽 로직을 씀.
     show_grid_map = rt_config.get("show_grid_map", True)
     loc_config = config["localization"]
     grid_config = load_grid_config(loc_config["locations_file"]) if show_grid_map else None
-    grid_tracker: SeojiwooGridPositionTracker | None = None
+    grid_tracker: LandmarkGridPositionTracker | None = None
     if grid_config is not None:
-        # detector.weights와 동일한 모델을 씀 (final_best.pt는 이 팀원 저장소의
-        # v1_best.pt와 해시까지 동일한 5클래스 모델 - docs/setup_log.md 18~19번 참고).
-        # logo 클래스는 이 5클래스 모델엔 없어서, 있으면 6클래스 모델
-        # (final_best_v2_with_logo.pt)을 logo 전용으로 같이 돌림.
-        weights_path = Path(config["detector"]["weights"])
-        logo_weights_path = weights_path.with_name("final_best_v2_with_logo.pt")
-        grid_tracker = SeojiwooGridPositionTracker(
+        # detector.weights와 동일한 모델을 씀 (2026-09-17부터 final_best.pt
+        # 자체가 6클래스라 logo도 이 모델 하나로 인식됨 - 별도 logo_weights 불필요)
+        grid_tracker = LandmarkGridPositionTracker(
             grid_config,
             pipeline.locations,
-            weights=str(weights_path),
-            logo_weights=str(logo_weights_path) if logo_weights_path.exists() else None,
+            weights=config["detector"]["weights"],
         )
 
     cap = cv2.VideoCapture(camera_index)
@@ -133,6 +127,10 @@ def run_realtime(config: dict[str, Any]) -> None:
                         grid_tracker.current_cell,
                         grid_tracker.current_label,
                         landmarks=grid_tracker.landmarks,
+                        current_location=grid_tracker.current_location,
+                        current_direction=grid_tracker.current_direction,
+                        logo_off_center=grid_tracker.logo_off_center,
+                        pending_candidate=grid_tracker.pending_candidate,
                     )
                     cv2.imshow("classroom-locator - 격자 위치", grid_img)
 

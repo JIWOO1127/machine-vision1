@@ -5,12 +5,16 @@
 # building     : 건물명
 # floor        : 층
 # description  : 사람이 이해하기 쉬운 위치 설명
-# coords       : (선택) 실내 좌표계를 쓴다면 x, y 등 자유롭게 정의
 # grid_cell / snap_distance_m : GridPositionTracker(격자 지도) 방식에서 사용.
 #   이 물체가 snap_distance_m(m) 이내로 탐지되면, 계산된 거리와 가장 가까운
 #   격자점(grid_cell 기준 거리)으로 현재 위치를 갱신함.
 #   grid_cell은 "칸(cell) 번호"가 아니라 격자 교차점(코너) 좌표 (x, y),
 #   왼쪽 아래가 원점(0,0), x: 0~cols, y: 0~rows.
+#   같은 name을 여러 번 등록하면(예: rear_door) 여러 단계(멀리서/가까이)로
+#   다른 grid_cell·display_name·guidance를 낼 수 있음 - snap_distance_m이
+#   작은 항목(더 가까운 단계)부터 확인해서, 실제 거리가 그 안에 들어오면 그
+#   단계를 씀 (안 들어오면 다음으로 먼 단계를 확인). logo/room2/room3/room4/
+#   front_door는 지금 단일 지점만 씀 (거리별로 다른 메시지 안 냄).
 
 # 격자 지도 설정: 가로 14칸 x 세로 4칸, 한 칸 = 1.8m
 # (좌회전/우회전만 있고 대각선 이동은 없는 시연 경로 전용)
@@ -24,59 +28,62 @@ locations:
   # name은 YOLO 클래스명(room2/room3/room4)과 동일하게 맞춰서, 탐지 클래스로
   # 바로 위치를 조회할 수 있게 합니다. 실제 표지판 텍스트는 aliases에 넣어서
   # OCR 매칭에도 쓸 수 있게 해뒀습니다.
-  # coords의 x는 위 grid(cols: 14)와 같은 범위(0~14)로 맞춰서 씁니다 —
-  # coords 자체는 scripts/visualize_map.py 전용이라 실시간 격자 지도
-  # (SeojiwooGridPositionTracker/grid_cell)와는 별개지만, 헷갈리지 않게
-  # 같은 x축 최대값(14)을 씁니다.
   - name: "room4"
     aliases: ["4강의실", "4호"]
     building: null
     floor: null
     description: "복도 시작 지점"
-    display_name: "4강의실"
-    guidance: "앞으로 쭉 직진하세요."
-    coords: { x: 0, y: 0 }
+    display_name: "4 강의실 앞"
+    guidance: "벽을 따라 앞으로 직진하세요."
     grid_cell: [3, 0]
-    snap_distance_m: 2.5
+    # 실제 학습 이미지 59장으로 Locator 거리 계산값을 실측해보니 1.25~5.48m,
+    # 중앙값 3.18m로 나옴 (2026-09-17). 2.5m로는 32%만 통과해서 5.0m로 올림
+    # (그 표본의 97% 커버). REAL_SIZE(팀원 저장소 값 그대로 씀)가 우리 실제
+    # 표지판 크기와 정확히 안 맞을 가능성이 있음 - 나중에 우리 표지판으로
+    # 직접 재보정하면 이 값을 더 정확하게 줄일 수 있음.
+    snap_distance_m: 5.0
 
   - name: "room3"
     aliases: ["3강의실", "3호"]
     building: null
     floor: null
     description: "복도 중간"
-    display_name: "3강의실"
-    guidance: "앞으로 쭉 직진하세요."
-    coords: { x: 8, y: 0 }
+    display_name: "3 강의실 앞"
+    guidance: "계속 벽을 따라 직진하세요."
     # 3강의실은 YOLO 클래스가 따로 없음(모델이 2_class/4_class로만 오분류함).
     # SeojiwooGridPositionTracker가 표지판 글자를 OCR로 직접 읽어서 "3"이면
     # 이 위치로 정정함 (grid_tracker.py의 _read_sign_digit 참고).
     grid_cell: [8, 0]
-    snap_distance_m: 2.5
+    snap_distance_m: 5.0  # room4와 동일한 이유로 상향 (아래 room4 주석 참고)
 
   - name: "room2"
     aliases: ["2강의실", "2호"]
     building: null
     floor: null
     description: "복도 끝 지점"
-    display_name: "2강의실"
-    guidance: "왼쪽으로 가세요."
-    coords: { x: 14, y: 0 }
+    display_name: "2 강의실 앞"
+    guidance: "문까지 직진 후 왼쪽으로 돌아주세요."
     grid_cell: [14, 0]
-    snap_distance_m: 2.5
+    snap_distance_m: 5.0  # room4와 동일한 이유로 상향 (위 room4 주석 참고)
 
   # 앞문/뒷문/정수기/로고: 글자가 없는 물체라 OCR이 아니라 YOLO가 이미지 자체를
   # 각 클래스로 직접 분류합니다. name이 YOLO 클래스명과 정확히 같아야
   # 바로 조회됩니다 (room2/3/4처럼 OCR 별칭 매칭용이 아님).
-  # logo는 final_best.pt(5클래스)엔 없고 final_best_v2_with_logo.pt(6클래스)
-  # 에만 있는 클래스 - SeojiwooGridPositionTracker가 logo_weights로 별도
-  # 모델을 같이 돌려서 인식함 (realtime_pipeline.py 참고).
+  # logo는 2026-09-17부터 final_best.pt 자체에 포함된 6클래스 중 하나
+  # (별도 로고 전용 모델 불필요, 그냥 detector.weights 하나로 인식됨).
+  #
+  # logo: 거리 단계 없이 단일 지점 (0,0) "중앙로고 앞" 하나만 씀 - 로고가
+  # snap_distance_m 이내로 탐지되면 항상 이 메시지. 다만 로고가 화면 중앙이
+  # 아닌 상태로 3초 넘게 계속되면, 고정 guidance 대신 "왼쪽/오른쪽으로
+  # 회전해주세요" 동적 안내로 바뀜 (grid_tracker.py의
+  # _describe_position/logo_off_center 참고). 이 각도 안내는 오직 logo에서만 씀.
   - name: "logo"
     aliases: []
     building: null
     floor: null
-    description: "복도 진입 전 정면 로고 벽 (시연 시작 기준점)"
-    display_name: "로고"
-    guidance: null
+    description: "복도 진입 전 정면 로고 벽 바로 앞"
+    display_name: "중앙로고 앞"
+    guidance: "왼쪽으로 돌아주세요."
     grid_cell: [0, 0]
     snap_distance_m: 3.0
 
@@ -84,34 +91,40 @@ locations:
     aliases: []
     building: null
     floor: null
-    description: "앞문 위치"
-    display_name: "앞문"
-    guidance: null
-    coords: { x: -2, y: 5 }
+    description: "정문 위치"
+    display_name: "정문 앞"
+    guidance: "뒤로 돌아주세요."
     grid_cell: [0, 4]
+    snap_distance_m: 3.0
+
+  # rear_door는 두 단계: 멀리서 "후문 앞"(3.0m 이내) / 문 바로 앞까지 붙었을
+  # 때 "목적지"(1.0m 이내, 도착 안내) - 둘 다 같은 지점(14,4)을 기준점으로
+  # 씀 (거리가 가까워질수록 두 단계 모두 자연히 (14,4) 쪽으로 수렴함).
+  - name: "rear_door"
+    aliases: []
+    building: null
+    floor: null
+    description: "후문 위치"
+    display_name: "후문 앞"
+    guidance: "직진해주세요."
+    grid_cell: [14, 4]
     snap_distance_m: 3.0
 
   - name: "rear_door"
     aliases: []
     building: null
     floor: null
-    description: "뒷문 위치"
-    display_name: "뒷문"
-    guidance: null
-    coords: { x: 14, y: 5 }
+    description: "후문 바로 앞 (목적지 도착)"
+    display_name: "목적지"
+    guidance: "도착하였습니다. 안내 모드를 종료합니다."
     grid_cell: [14, 4]
-    snap_distance_m: 3.0
+    snap_distance_m: 1.0
 
-  - name: "water_dispenser"
-    aliases: []
-    building: null
-    floor: null
-    description: "정수기 위치"
-    display_name: "정수기"
-    guidance: null
-    coords: { x: 5, y: 3 }
+  # water_dispenser(정수기)는 2026-09-17부터 인식 대상에서 완전히 제외함
+  # (configs/default.yaml의 target_classes에서도 제거 - 사용자 요청).
 
   # 실제 강의실 표지판 촬영 데이터를 확보하면 아래처럼 계속 추가하세요.
   # - name: "room5"
   #   aliases: ["5강의실"]
-  #   coords: { x: -8, y: 0 }
+  #   grid_cell: [x, y]
+  #   snap_distance_m: 2.5

@@ -42,7 +42,6 @@ def run_batch(config: dict[str, Any], input_dir: str) -> list[dict[str, Any]]:
         record: dict[str, Any] = {
             "image": str(image_path),
             "num_detections": len(result.detections),
-            "ocr_texts": result.ocr_texts_per_detection,
             "matched_location": result.match.location.name if result.match else None,
             "match_score": result.match.score if result.match else None,
         }

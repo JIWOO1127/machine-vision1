@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 import yaml
 
@@ -18,7 +17,6 @@ class Location:
     description: str | None = None
     display_name: str | None = None
     guidance: str | None = None
-    coords: dict[str, Any] | None = None
     # 격자 지도 방식(GridPositionTracker)에서 쓰는 필드: 이 물체가
     # snap_distance_m 이내로 탐지되면 현재 위치를 grid_cell로 갱신함.
     grid_cell: tuple[int, int] | None = None
@@ -27,6 +25,15 @@ class Location:
     def all_names(self) -> list[str]:
         """매칭에 사용할 모든 이름(원래 이름 + 별칭) 목록."""
         return [self.name, *self.aliases]
+
+
+@dataclass
+class MatchResult:
+    """탐지된 클래스가 어느 Location에 해당하는지 판정한 결과 (core.py에서 씀)."""
+
+    location: Location
+    matched_text: str
+    score: float  # 0~100
 
 
 @dataclass
@@ -56,7 +63,6 @@ def load_locations(locations_file: str | Path) -> list[Location]:
                 description=item.get("description"),
                 display_name=item.get("display_name"),
                 guidance=item.get("guidance"),
-                coords=item.get("coords"),
                 grid_cell=tuple(grid_cell) if grid_cell else None,
                 snap_distance_m=item.get("snap_distance_m"),
             )

@@ -1,0 +1,12 @@
+[
+  {
+    "node_id": "F1_MEETING_01",
+    "place_name": "회의실1 앞",
+    "floor": 1,
+    "map_x": null,
+    "map_y": null,
+    "direction": null,
+    "keywords": ["회의실 1", "회의실1"],
+    "next_nodes": []
+  }
+]
