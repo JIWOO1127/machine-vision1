@@ -10,7 +10,7 @@ import re, time
 import cv2, numpy as np
 
 _KO_DIGIT = re.compile(r'[0-9가-힣]')
-SIGN_DIGIT = {'2_class': '2', '4_class': '4'}
+SIGN_DIGIT = {'2_class': '2', '3_class': '3', '4_class': '4'}   # 3_class 는 YOLO 클래스 없이 OCR 로만 구분
 
 
 class OcrVerifier:
@@ -28,7 +28,7 @@ class OcrVerifier:
         if crop.size == 0: return []
         s = self.upscale_to / max(1, crop.shape[0])
         if s > 1: crop = cv2.resize(crop, None, fx=s, fy=s, interpolation=cv2.INTER_CUBIC)
-        res = self.reader.readtext(crop)                       # [(bbox, text, conf), ...]
+        res = self.reader.readtext(crop, allowlist='0123456789강의실회Class Room')   # 허용 문자 제한으로 오독 감소
         res = sorted([r for r in res if r[2] >= self.min_conf], key=lambda r: r[0][0][0])
         return [r[1] for r in res]
 

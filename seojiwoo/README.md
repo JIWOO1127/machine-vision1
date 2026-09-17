@@ -13,7 +13,7 @@ python -m venv .venv
 
 녹화 영상으로 확인:
 ```powershell
-.\.venv\Scripts\python.exe demo_live.py --weights v1_best.pt --logo_weights final_best.pt --source ..\..\sample\test.mp4 --device 0 --save
+.\.venv\Scripts\python.exe demo_live.py --weights v1_best.pt --logo_weights final_best.pt --source ..\..\sample\test.mp4 --device 0 --nav --ocr --tts --save
 ```
 폰 카메라(DroidCam 가상 웹캠)로:
 ```powershell
@@ -47,7 +47,8 @@ python -m venv .venv
 - 투표: 최근 5프레임(초당 5회 추론 = 1초) 중 같은 랜드마크 4표 이상
 - 안내: 거리 ≤ 3.0 m 이고 접근 중일 때 "앞쪽에 ○○이 있습니다". 같은 문장은 5초에 한 번
 - 표지판 숫자: `--ocr` 켜면 근접 시 crop 을 EasyOCR 로 읽어 숫자 확인. 회의실/다른 숫자면 안내 취소
-- 시나리오(`--nav`): 앞문 → 로고 찾기(좌/우/직진) → 벽(≤1.2 m) 좌회전 → 4강의실 → 2강의실 → 좌회전 → 뒷문 도착
+- 시나리오(`--nav`): 앞문 → 로고 찾기(좌/우/직진) → 벽(≤1.2 m) 좌회전 → 4강의실 → 3강의실(YOLO 클래스 없이 OCR만으로 통과 확인) → 2강의실 → 좌회전 → 뒷문 도착
+- 표지판 단계 전환: 4강의실/3강의실에서 도달 안내 후에도, 해당 표지판이 화면에서 완전히 사라져야(연속 3프레임 미탐지) 다음 표지판 단계로 넘어감 — 같은 표지판을 다음 단계로 착각해 재판독하는 것을 방지
 
 클래스: `2_class, 4_class, front_door, rear_door, water_dispenser(미사용), logo`
 

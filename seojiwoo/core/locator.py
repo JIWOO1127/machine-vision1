@@ -46,6 +46,7 @@ class Locator:
         self.verifier, self.last_ocr = verifier, ''        # OCR 검증기(선택): 표지판 near 시 글자로 확인
         # merge_signs: 2_class/4_class 를 'sign' 하나로 합쳐 투표 → 숫자는 OCR 이 expected_sign 과 대조
         self.merge_signs, self.expected_sign = merge_signs, None
+        self.ocr_hits, self.ocr_confirm_frames = 0, 2     # 연속 confirm 횟수 (2회 맞아야 안내)
 
     def _distance(self, name, x1, y1, x2, y2, W, H):
         h_real, w_real = REAL_SIZE[name]
@@ -111,8 +112,11 @@ class Locator:
             expected = self.expected_sign or (landmark if landmark in SIGNS else None)
             if box is not None and expected is not None:
                 verdict, txt = self.verifier.verify(frame, box, expected); self.last_ocr = f'{verdict}:{txt}'
+                if verdict == 'confirm': self.ocr_hits += 1
+                elif verdict == 'reject': self.ocr_hits = 0
                 if verdict == 'reject': state, reason = 'far', f'OCR reject "{txt}"'
                 elif verdict == 'unknown' and self.merge_signs: state, reason = 'far', 'OCR unread'   # 합친 모드에선 숫자 확인 필수
+                elif verdict == 'confirm' and self.ocr_hits < self.ocr_confirm_frames: state, reason = 'far', f'OCR {self.ocr_hits}/{self.ocr_confirm_frames}'
 
         text = f'앞쪽에 {DISPLAY[landmark]}이 있습니다' if state == 'near' else None
         announce = False
