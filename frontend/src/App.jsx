@@ -9,21 +9,8 @@ function LivePanel({ cue, analyzing, playbackTime, processingMs, camera = false 
     : 0
   return (
     <div className="live-caption" aria-live="polite">
-      <div className="caption-time">
-        {camera ? '실시간 카메라' : `재생 ${playbackTime.toFixed(1)}초`}
-        {analyzing ? ' · 현재 화면 분석 중…' : processingMs ? ` · 응답 ${(processingMs / 1000).toFixed(1)}초` : ''}
-      </div>
-      {stability && !stability.confirmed && (
-        <div className="stability-progress">
-          <span style={{ width: `${Math.min(100, progressValue * 100)}%` }} />
-        </div>
-      )}
-      <strong className="live-guidance">
-        {cue?.guidance || '영상을 재생하면 현재 화면의 거리와 위치를 바로 알려드려요.'}
-      </strong>
-
       <div className="live-location-row">
-        <span>추정 현재 위치</span>
+        <span>위치</span>
         <b>{cue?.location?.label || '재생 대기'}</b>
       </div>
 
@@ -43,8 +30,22 @@ function LivePanel({ cue, analyzing, playbackTime, processingMs, camera = false 
 
       <div className="live-detail">
         <span>객체 {cue?.detections?.length ? cue.detections.join(' · ') : '탐지 없음'}</span>
-        {cue?.location?.motion && <span>움직임 {cue.location.motion}</span>}
+        {/* {cue?.location?.motion && <span>움직임 {cue.location.motion}</span>} */}
       </div>
+
+
+      <div class="bottom-grid">
+                  {/* {stability && !stability.confirmed && (
+          <div className="stability-progress">
+            <span style={{ width: `${Math.min(100, progressValue * 100)}%` }} />
+          </div>
+        )} */}
+        <strong className="live-guidance">
+          {cue?.guidance || '영상을 재생하면 현재 화면의 거리와 위치를 바로 알려드려요.'}
+        </strong>
+      </div>
+      
+
     </div>
   )
 }
@@ -313,14 +314,19 @@ export default function App() {
   )
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell ${cameraActive ? 'camera-running' : ''}`}>
+      <div className="orientation-gate" role="dialog" aria-label="가로 화면 필요">
+        <div className="rotate-phone" aria-hidden="true"><span /></div>
+        <strong>휴대폰을 가로로 돌려주세요</strong>
+        <p>실시간 카메라와 위치 안내는 가로 화면 전용입니다.</p>
+      </div>
       <header>
         <div className="server-line">
           <span className={`server-dot ${serverReady ? 'ready' : ''}`} />
-          {server === null ? '서버 확인 중' : serverReady ? `서버 준비 완료 · ${server.device}` : '서버 준비 안 됨'}
+          {server === null ? '서버 확인 중' : serverReady ? `서버 준비 완료` : '서버 준비 안 됨'}
         </div>
         <h1>현재 위치 확인</h1>
-        <p>휴대폰 영상에서 객체를 탐지하고 거리와 현재 위치를 추정합니다.</p>
+        {/* <p>휴대폰 영상에서 객체를 탐지하고 거리와 현재 위치를 추정합니다.</p> */}
         <button
           type="button"
           className={`voice-toggle ${voiceEnabled ? 'on' : ''}`}
@@ -333,7 +339,7 @@ export default function App() {
         </button>
       </header>
 
-      <section className="capture-card">
+      <section className={`capture-card ${cameraActive ? 'live-camera-card' : ''} ${cameraActive || (preview && mediaType === 'video') ? 'live-media-card' : ''} ${!preview && !cameraActive ? 'is-empty' : ''}`}>
         <input
           ref={inputRef}
           id="camera"
