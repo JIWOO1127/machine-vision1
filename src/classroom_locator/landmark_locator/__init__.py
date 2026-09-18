@@ -11,6 +11,7 @@
 from .locator import Locator, DISPLAY, REAL_SIZE, SIGNS
 from .navigator import Navigator
 from .ocr_verify import OcrVerifier, build_verifier, read_digit, read_sign_info
+from .steer import SteerGuide
 
 __all__ = [
     "Locator",
@@ -22,4 +23,5 @@ __all__ = [
     "build_verifier",
     "read_digit",
     "read_sign_info",
+    "SteerGuide",
 ]

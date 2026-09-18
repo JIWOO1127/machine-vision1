@@ -207,6 +207,11 @@ def create_app():
         live_vision.reset_tracking()
         return jsonify(status="ok")
 
+    @app.post("/api/nav/reset")
+    def nav_reset():
+        live_vision.reset_steer()
+        return jsonify(status="ok")
+
     @app.post("/api/analyze-frame")
     def analyze_frame():
         started = perf_counter()

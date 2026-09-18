@@ -43,6 +43,7 @@ from classroom_locator.localization.location_map import (  # noqa: E402
     load_grid_config,
     load_locations,
 )
+from classroom_locator.landmark_locator import SteerGuide  # noqa: E402
 from classroom_locator.pipeline.grid_tracker import (  # noqa: E402
     MAP_LABELS,
     LandmarkGridPositionTracker,
@@ -153,6 +154,11 @@ class LandmarkVisionEngine:
         self.live_tracker: LandmarkGridPositionTracker | None = None
         self._photo_tracker: LandmarkGridPositionTracker | None = None
         self._video_tracker: LandmarkGridPositionTracker | None = None
+        # 로고/뒷문 좌우 방향 안내 세션 상태 (webapp/backend/services/vision_bridge.py
+        # 전용, steer.py 참고). 격자 트래커와 1:1로 대응 - 별도 YOLO 추론 없이
+        # 같은 프레임의 detections를 재사용한다.
+        self.live_steer: SteerGuide | None = None
+        self._video_steer: SteerGuide | None = None
         self.lock = threading.Lock()
         try:
             self._load()
@@ -169,6 +175,7 @@ class LandmarkVisionEngine:
             weights=str(DEFAULT_WEIGHTS),
             logo_weights=str(DEFAULT_LOGO_WEIGHTS),
         )
+        self.live_steer = SteerGuide()
 
     @property
     def photo_tracker(self) -> LandmarkGridPositionTracker | None:
@@ -199,6 +206,7 @@ class LandmarkVisionEngine:
                 weights=str(DEFAULT_WEIGHTS),
                 logo_weights=str(DEFAULT_LOGO_WEIGHTS),
             )
+            self._video_steer = SteerGuide()
         return self._video_tracker
 
     # -- app.py의 /api/health --
@@ -229,6 +237,14 @@ class LandmarkVisionEngine:
             return
         with self.lock:
             _reset_tracker_state(self.live_tracker)
+
+    def reset_steer(self) -> None:
+        # /api/nav/reset 전용 - 격자 위치(reset_tracking)와 별도로, 로고/뒷문
+        # 방향 안내의 도달·도착 플래그와 마지막 발화만 초기화한다.
+        if self.live_steer is None:
+            return
+        with self.lock:
+            self.live_steer.reset()
 
     # ---------------------------------------------------------------- cue 빌드
     def _landmarks_and_detections(
@@ -305,7 +321,11 @@ class LandmarkVisionEngine:
         }
 
     def _build_cue(
-        self, tracker: LandmarkGridPositionTracker, frame: np.ndarray, time_seconds: float
+        self,
+        tracker: LandmarkGridPositionTracker,
+        frame: np.ndarray,
+        time_seconds: float,
+        steer: SteerGuide | None = None,
     ) -> tuple[dict, dict]:
         """프레임 하나를 판정하고 (cue, Locator 원본 결과)를 반환한다.
         실시간 카메라/영상 타임라인이 공유하는 공통 경로."""
@@ -333,6 +353,19 @@ class LandmarkVisionEngine:
             command = None
             guidance = ""
 
+        if steer is not None:
+            steer_result = steer.update(out.get("detections", []), frame.shape[1], time_seconds)
+            if steer_result["steer_announce"]:
+                print(f"[steer] {steer_result['steer_text']}")
+        else:
+            steer_result = {
+                "steer_text": None,
+                "steer": None,
+                "steer_target": None,
+                "steer_distance_m": None,
+                "steer_announce": False,
+            }
+
         cue = {
             "time_seconds": round(time_seconds, 3),
             "texts": [],
@@ -343,6 +376,7 @@ class LandmarkVisionEngine:
             "command": command,
             "guidance": guidance,
             "stability": stability,
+            **steer_result,
         }
         return cue, out
 
@@ -369,7 +403,7 @@ class LandmarkVisionEngine:
             raise RuntimeError(self.load_error or "위치 추적 모델이 준비되지 않았습니다.")
         frame = decode_image(payload)
         with self.lock:
-            cue, _out = self._build_cue(self.live_tracker, frame, time_seconds)
+            cue, _out = self._build_cue(self.live_tracker, frame, time_seconds, steer=self.live_steer)
         return {
             "detections": [],
             "texts": [],
@@ -458,12 +492,14 @@ class LandmarkVisionEngine:
         try:
             with self.lock:
                 _reset_tracker_state(tracker)
+                if self._video_steer is not None:
+                    self._video_steer.reset()
                 while True:
                     ok, frame = capture.read()
                     if not ok:
                         break
                     if frame_index % frame_step == 0:
-                        cue, out = self._build_cue(tracker, frame, frame_index / fps)
+                        cue, out = self._build_cue(tracker, frame, frame_index / fps, steer=self._video_steer)
                         processed_frames += 1
                         last_headline = cue["command"] or cue["guidance"] or last_headline
                         for det in out.get("detections", []):

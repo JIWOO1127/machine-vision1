@@ -57,6 +57,12 @@ function LivePanel({ cue, analyzing, playbackTime, processingMs, camera = false 
     : 0
   return (
     <div className="live-caption" aria-live="polite">
+      {cue?.steer_text && (
+        <div className="steer-banner">
+          <strong>{cue.steer_text}</strong>
+        </div>
+      )}
+
       <div className="live-location-row">
         <span>위치</span>
         <b>{cue?.location?.label || '재생 대기'}</b>
@@ -164,6 +170,23 @@ export default function App() {
     if (koreanVoice) utterance.voice = koreanVoice
     window.speechSynthesis.speak(utterance)
     lastSpokenKeyRef.current = speechText
+  }, [liveCue, speechSupported, voiceEnabled])
+
+  useEffect(() => {
+    // 로고/뒷문 방향 안내(steer_text)는 서버(SteerGuide._say)가 이미 "문장이
+    // 바뀌었거나 2.5초 지났을 때만" announce=true로 표시해 중복 발화를 막아준다.
+    // 프론트는 announce가 true일 때 한 번만 읽고, 다른 문장이 재생 중이면 건너뛴다.
+    if (!speechSupported || !voiceEnabled) return
+    if (!liveCue?.steer_announce || !liveCue?.steer_text) return
+    if (window.speechSynthesis.speaking) return
+
+    const utterance = new SpeechSynthesisUtterance(liveCue.steer_text)
+    utterance.lang = 'ko-KR'
+    utterance.rate = 1
+    utterance.pitch = 1
+    const koreanVoice = window.speechSynthesis.getVoices().find((voice) => voice.lang?.toLowerCase().startsWith('ko'))
+    if (koreanVoice) utterance.voice = koreanVoice
+    window.speechSynthesis.speak(utterance)
   }, [liveCue, speechSupported, voiceEnabled])
 
   const toggleVoice = () => {
@@ -286,7 +309,7 @@ export default function App() {
     setLiveAnalyzing(true)
     const capturedTime = video.currentTime
     try {
-      const maxWidth = 960
+      const maxWidth = 640
       const scale = Math.min(1, maxWidth / video.videoWidth)
       const canvas = document.createElement('canvas')
       canvas.width = Math.max(1, Math.round(video.videoWidth * scale))
