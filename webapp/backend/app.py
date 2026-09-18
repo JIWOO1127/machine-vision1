@@ -209,7 +209,7 @@ def create_app():
 
     @app.post("/api/nav/reset")
     def nav_reset():
-        live_vision.reset_steer()
+        live_vision.reset_navigator()
         return jsonify(status="ok")
 
     @app.post("/api/analyze-frame")

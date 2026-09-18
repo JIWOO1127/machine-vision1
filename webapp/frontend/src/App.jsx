@@ -57,9 +57,9 @@ function LivePanel({ cue, analyzing, playbackTime, processingMs, camera = false 
     : 0
   return (
     <div className="live-caption" aria-live="polite">
-      {cue?.steer_text && (
+      {cue?.nav_text && (
         <div className="steer-banner">
-          <strong>{cue.steer_text}</strong>
+          <strong>{cue.nav_text}</strong>
         </div>
       )}
 
@@ -119,6 +119,9 @@ export default function App() {
   const frameSequenceRef = useRef(0)
   const displayedSequenceRef = useRef(0)
   const lastSpokenKeyRef = useRef('')
+  const pendingSpeechRef = useRef('')
+  const speechActiveRef = useRef(false)
+  const voiceEnabledRef = useRef(true)
   const [file, setFile] = useState(null)
   const [mediaType, setMediaType] = useState('image')
   const [preview, setPreview] = useState('')
@@ -147,59 +150,61 @@ export default function App() {
     streamTokenRef.current += 1
     if (liveTimerRef.current) window.clearInterval(liveTimerRef.current)
     cameraStreamRef.current?.getTracks().forEach((track) => track.stop())
+    voiceEnabledRef.current = false
+    pendingSpeechRef.current = ''
+    speechActiveRef.current = false
     if (speechSupported) window.speechSynthesis.cancel()
   }, [])
 
-  useEffect(() => {
-    const stability = liveCue?.stability
-    if (!speechSupported || !voiceEnabled || !stability?.confirmed) return
-    const speechText = liveCue.command || liveCue.guidance
-    if (!speechText) return
-    // stability.confirmed는 최근 5프레임 중 4프레임 다수결이라 노이즈로 프레임마다
-    // true/false가 깜빡일 수 있다. confirmed가 잠깐 꺼졌다 켜질 때마다 다시 말하지
-    // 않도록, "마지막으로 말한 문장"은 confirmed 여부와 무관하게 유지하고 문장이
-    // 실제로 바뀔 때만 새로 안내한다.
-    if (speechText === lastSpokenKeyRef.current) return
-    if (window.speechSynthesis.speaking) return
+  const speakLatestNavText = (text) => {
+    if (!speechSupported || !voiceEnabledRef.current || !text) return
 
-    const utterance = new SpeechSynthesisUtterance(speechText)
+    // 읽는 중에는 브라우저 음성 큐에 계속 추가하지 않고 최신 문장 하나만 보관한다.
+    if (speechActiveRef.current || window.speechSynthesis.speaking) {
+      pendingSpeechRef.current = text === lastSpokenKeyRef.current ? '' : text
+      return
+    }
+    if (text === lastSpokenKeyRef.current) return
+
+    const utterance = new SpeechSynthesisUtterance(text)
     utterance.lang = 'ko-KR'
     utterance.rate = 1
     utterance.pitch = 1
     const koreanVoice = window.speechSynthesis.getVoices().find((voice) => voice.lang?.toLowerCase().startsWith('ko'))
     if (koreanVoice) utterance.voice = koreanVoice
+
+    speechActiveRef.current = true
+    lastSpokenKeyRef.current = text
+    const speakPending = () => {
+      speechActiveRef.current = false
+      const latest = pendingSpeechRef.current
+      pendingSpeechRef.current = ''
+      if (latest && latest !== lastSpokenKeyRef.current && voiceEnabledRef.current) {
+        speakLatestNavText(latest)
+      }
+    }
+    utterance.onend = speakPending
+    utterance.onerror = speakPending
     window.speechSynthesis.speak(utterance)
-    lastSpokenKeyRef.current = speechText
-  }, [liveCue, speechSupported, voiceEnabled])
+  }
 
   useEffect(() => {
-    // 로고/뒷문 방향 안내(steer_text)는 서버(SteerGuide._say)가 이미 "문장이
-    // 바뀌었거나 2.5초 지났을 때만" announce=true로 표시해 중복 발화를 막아준다.
-    // 프론트는 announce가 true일 때 한 번만 읽고, 다른 문장이 재생 중이면 건너뛴다.
+    // 화면의 초록색 Navigator 문장만 읽는다. 재생 중 들어온 중간 거리 문장은
+    // 버리고, 현재 음성이 끝나면 가장 최신 문장 하나만 이어서 읽는다.
     if (!speechSupported || !voiceEnabled) return
-    if (!liveCue?.steer_announce || !liveCue?.steer_text) return
-    if (window.speechSynthesis.speaking) return
-
-    const utterance = new SpeechSynthesisUtterance(liveCue.steer_text)
-    utterance.lang = 'ko-KR'
-    utterance.rate = 1
-    utterance.pitch = 1
-    const koreanVoice = window.speechSynthesis.getVoices().find((voice) => voice.lang?.toLowerCase().startsWith('ko'))
-    if (koreanVoice) utterance.voice = koreanVoice
-    window.speechSynthesis.speak(utterance)
+    if (!liveCue?.nav_text) return
+    speakLatestNavText(liveCue.nav_text)
   }, [liveCue, speechSupported, voiceEnabled])
 
   const toggleVoice = () => {
     if (!speechSupported) return
     const next = !voiceEnabled
+    voiceEnabledRef.current = next
     setVoiceEnabled(next)
+    pendingSpeechRef.current = ''
+    speechActiveRef.current = false
     window.speechSynthesis.cancel()
-    if (next) {
-      const utterance = new SpeechSynthesisUtterance('음성 안내를 켰습니다.')
-      utterance.lang = 'ko-KR'
-      window.speechSynthesis.speak(utterance)
-      lastSpokenKeyRef.current = ''
-    }
+    lastSpokenKeyRef.current = ''
   }
 
   const stopCamera = () => {
@@ -211,6 +216,8 @@ export default function App() {
     inFlightFramesRef.current = 0
     streamTokenRef.current += 1
     if (liveTimerRef.current) window.clearInterval(liveTimerRef.current)
+    pendingSpeechRef.current = ''
+    speechActiveRef.current = false
     if (speechSupported) window.speechSynthesis.cancel()
     lastSpokenKeyRef.current = ''
   }
@@ -236,12 +243,6 @@ export default function App() {
     }
     try {
       stopCamera()
-      if (speechSupported && voiceEnabled) {
-        window.speechSynthesis.cancel()
-        const utterance = new SpeechSynthesisUtterance('음성 안내를 시작합니다.')
-        utterance.lang = 'ko-KR'
-        window.speechSynthesis.speak(utterance)
-      }
       if (preview) URL.revokeObjectURL(preview)
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
