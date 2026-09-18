@@ -69,8 +69,11 @@ locations:
   # 앞문/뒷문/정수기/로고: 글자가 없는 물체라 OCR이 아니라 YOLO가 이미지 자체를
   # 각 클래스로 직접 분류합니다. name이 YOLO 클래스명과 정확히 같아야
   # 바로 조회됩니다 (room2/3/4처럼 OCR 별칭 매칭용이 아님).
-  # logo는 2026-09-17부터 final_best.pt 자체에 포함된 6클래스 중 하나
-  # (별도 로고 전용 모델 불필요, 그냥 detector.weights 하나로 인식됨).
+  # logo는 2026-09-18부터 다시 별도 로고 전용 모델(detector.logo_weights =
+  # models/yolo/logo_best.pt)에서만 인식됩니다 - 6클래스로 합쳐 재학습하면
+  # 표지판(room2/room4) 원거리 탐지가 무너지는 문제가 있어, seojiwoo/core
+  # 최종 방식대로 표지판·문 전용 landmark_best.pt와 다시 분리함
+  # (configs/default.yaml 상단 주석 참고).
   #
   # logo: 거리 단계 없이 단일 지점 (0,0) "중앙로고 앞" 하나만 씀 - 로고가
   # snap_distance_m 이내로 탐지되면 항상 이 메시지. 다만 로고가 화면 중앙이

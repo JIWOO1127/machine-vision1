@@ -33,7 +33,7 @@ SIGNS = {'2_class', '4_class'}
 
 
 class Locator:
-    def __init__(self, weights, f_norm=0.85, near_m=3.0, window=5, min_votes=3, conf=0.5, sign_conf=0.5,
+    def __init__(self, weights, f_norm=0.85, near_m=3.0, window=5, min_votes=4, conf=0.5, sign_conf=0.35,
                  approach_only=True, route=None, imgsz=640, device=None, announce_every=5.0, targets=tuple(REAL_SIZE),
                  verifier=None, merge_signs=False, logo_weights=None):
         self.model = YOLO(str(weights))

@@ -20,6 +20,7 @@ def get_detector(config: dict[str, Any]) -> BaseDetector:
     if backend in ("ultralytics", "yolov5"):
         return YoloDetector(
             weights=config["weights"],
+            logo_weights=config.get("logo_weights"),
             backend=backend,
             conf_threshold=config.get("conf_threshold", 0.5),
             target_classes=config.get("target_classes"),

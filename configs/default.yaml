@@ -7,14 +7,20 @@
 # classroom_locator.landmark_locator.ocr_verify.OcrVerifier(build_verifier/
 # read_digit)를 pipeline/core.py와 pipeline/grid_tracker.py가 공용으로 씀.
 #
-# final_best.pt로 교체함 (best_yolo_only.pt보다 test_sample 평가에서 더
-# 좋았음 - Macro F1 0.850 vs 0.821, docs/setup_log.md 15번 참고). 이 모델은
-# 클래스 이름이 "2_class"/"4_class" 그대로라서 class_name_map으로
+# 2모델 구성(seojiwoo/core 최종 방식으로 이식, 2026-09-18): logo까지 합쳐
+# 6클래스로 재학습하면 표지판(2_class/4_class) 원거리 탐지 정확도가 무너지는
+# 문제가 있어(seojiwoo/README.md "자주 막히는 곳" 참고), 표지판·문 전용
+# landmark_best.pt(5클래스)와 로고 전용 logo_best.pt로 다시 분리함.
+# detection/yolo_detector.py(YoloDetector)가 logo_weights를 받으면 로고는
+# logo_weights 모델에서만, 나머지 클래스는 weights 모델에서만 가져온다
+# (classroom_locator.landmark_locator.locator.Locator.detect()와 동일 로직).
+# 클래스 이름은 여전히 "2_class"/"4_class" 그대로라서 class_name_map으로
 # room2/room4로 바꿔치기함.
 
 detector:
   backend: ultralytics        # "ultralytics" | "yolov5"
-  weights: models/yolo/final_best.pt
+  weights: models/yolo/landmark_best.pt
+  logo_weights: models/yolo/logo_best.pt
   conf_threshold: 0.5
   class_name_map:
     "2_class": "room2"
@@ -22,6 +28,18 @@ detector:
   # room2/room4(YOLO 직접분류, OCR로 room3 정정) + front_door/rear_door/logo.
   # water_dispenser(정수기)는 2026-09-17부터 인식 대상에서 제외함 (사용자 요청).
   target_classes: ["room2", "room4", "front_door", "rear_door", "logo"]
+
+# seojiwoo/core 최종 판정값 (2026-09-18 이식). classroom_locator.landmark_locator.
+# Locator를 직접 쓰는 경로(pipeline/grid_tracker.py의 LandmarkGridPositionTracker,
+# scripts/run_landmark_demo.py)가 이 값을 읽는다 - pipeline/core.py의
+# LocatorPipeline(YoloDetector 직접분류, 거리·투표 없음)에는 해당 안 됨.
+# ocr_confirm_frames(=2)는 Locator 안에 고정값이라 여기 없음.
+locator:
+  min_votes: 4       # 최근 window(5)프레임 중 몇 표 이상이어야 확정할지
+  sign_conf: 0.35     # 표지판(2_class/4_class) confidence - OCR 검증과 함께 쓰므로 낮게
+  conf: 0.5           # 그 외 클래스(문/로고) confidence
+  near_m: 3.0         # 이 거리(m) 이하면 근접(near) 판정
+  f_norm: 0.85        # 거리 추정(핀홀) 보정 계수
 
 localization:
   locations_file: configs/locations.yaml

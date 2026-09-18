@@ -68,12 +68,17 @@ def run_realtime(config: dict[str, Any]) -> None:
     grid_config = load_grid_config(loc_config["locations_file"]) if show_grid_map else None
     grid_tracker: LandmarkGridPositionTracker | None = None
     if grid_config is not None:
-        # detector.weights와 동일한 모델을 씀 (2026-09-17부터 final_best.pt
-        # 자체가 6클래스라 logo도 이 모델 하나로 인식됨 - 별도 logo_weights 불필요)
+        # detector.weights/logo_weights와 동일한 2모델 구성을 씀 (landmark_best.pt
+        # 표지판·문 + logo_best.pt 로고 전용, seojiwoo/core 최종 방식 - configs/
+        # default.yaml 상단 주석 참고). 판정 임계값(min_votes/sign_conf/conf/
+        # near_m/f_norm)도 default.yaml의 locator: 섹션 값을 그대로 넘김.
+        locator_config = config.get("locator", {})
         grid_tracker = LandmarkGridPositionTracker(
             grid_config,
             pipeline.locations,
             weights=config["detector"]["weights"],
+            logo_weights=config["detector"].get("logo_weights"),
+            **locator_config,
         )
 
     cap = cv2.VideoCapture(camera_index)

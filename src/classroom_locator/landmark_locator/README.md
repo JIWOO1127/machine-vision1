@@ -14,14 +14,15 @@
 |---|---|
 | `locator.py` | 프레임 → YOLO 탐지 → 거리 추정 → 최근 N프레임 투표 → near/far/none 판정 |
 | `ocr_verify.py` | 표지판이 "근접(near)"으로 판정된 순간에만 OCR로 숫자 재확인(confirm/reject/unknown) |
+| `navigator.py` | 시나리오 상태 머신(find_logo→reach_wall→room4→room3→room2→rear_door) + 좌/우/직진 방향 안내 |
 
-(원본의 `navigator.py`는 시나리오 상태 머신(find_logo→reach_wall→room4→room3→
-room2→rear_door)이었는데, 실제 제품(웹 UI/CLI 격자 지도) 어디서도 안 써서
-2026-09-17에 삭제함. "현재 위치가 어디인지 + 무슨 안내를 할지"는
-`pipeline/grid_tracker.py`의 `LandmarkGridPositionTracker`/`_describe_position()`가
-대신 담당 - 순서를 강제하는 상태 머신 없이, 매 프레임 독립적으로 어느
-랜드마크가 감지됐는지만 보고 판정하는 방식이라 원본의 Navigator 구조 자체가
-필요 없음.)
+(2026-09-17에 "실제 제품(웹 UI/CLI 격자 지도) 어디서도 안 씀"이라는 이유로
+`navigator.py`를 한 번 삭제했었으나, 2026-09-18 `scripts/run_landmark_demo.py
+--nav`용으로 다시 이식함. `classroom_locator.pipeline`의 격자 지도 판정
+(`LandmarkGridPositionTracker`/`_describe_position()`)은 여전히 이 상태 머신을
+쓰지 않고, 매 프레임 독립적으로 어느 랜드마크가 감지됐는지만 보고 판정한다 -
+`Navigator`는 순서를 강제하는 시연용 시나리오가 필요한 `run_landmark_demo.py
+--nav`에서만 쓰는 별도 경로다.)
 
 (원본의 `demo_live.py`는 `scripts/run_landmark_demo.py`로 옮겨졌습니다.)
 

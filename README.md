@@ -21,7 +21,8 @@ classroom-locator/
 │   ├── annotations/              # YOLO 학습용 라벨(txt) 등
 │   └── dataset/                  # 학습용 데이터셋(train/valid/test)
 ├── models/
-│   ├── yolo/final_best.pt        # YOLO 가중치 - root CLI와 webapp이 이 파일 하나를 직접 참조
+│   ├── yolo/landmark_best.pt     # 표지판·문 전용 (5클래스) - root CLI와 webapp이 detector.weights로 참조
+│   ├── yolo/logo_best.pt         # 로고 전용 - detector.logo_weights로 참조 (2모델 구성, seojiwoo/core 최종 방식)
 │   └── ocr/                      # OCR 관련 모델/가중치 (필요 시)
 ├── notebooks/                    # 데이터 탐색, 실험용 주피터 노트북
 ├── src/classroom_locator/        # 핵심 파이썬 패키지
@@ -110,23 +111,26 @@ python scripts/run_batch.py --input data/raw --config configs/default.yaml
 python scripts/run_landmark_demo.py --source 0 --tts
 python scripts/run_landmark_demo.py --source data/raw/test_video.mp4 --save
 python scripts/run_landmark_demo.py --source data/raw/test_video.mp4 --ocr --route front_door 4_class 2_class rear_door
+python scripts/run_landmark_demo.py --source data/raw/test_video.mp4 --nav --ocr --tts   # 로고→벽→4→3→2→뒷문 시나리오
 ```
 
 | 인자 | 설명 |
 |---|---|
-| `--weights PATH` | 주 모델 (기본은 2026-09-17부터 logo까지 포함된 6클래스 `final_best.pt`) |
-| `--logo_weights PATH` | 로고를 별도 모델로 나눠 쓰고 싶을 때만 지정 (보통 불필요) |
+| `--weights PATH` | 주 모델 - 표지판·문 전용 5클래스 (기본 `models/yolo/landmark_best.pt`) |
+| `--logo_weights PATH` | 로고 전용 모델 (기본 `models/yolo/logo_best.pt`, 2모델 구성이 기본값) |
 | `--source PATH` | 파일 경로 / 스트림 URL / 카메라 번호 (필수) |
 | `--stride N` | N프레임마다 1회 추론 (기본 6, 30fps 영상 기준 초당 5회) |
 | `--window N` / `--min_votes N` | 최근 N프레임 중 몇 표 이상 같아야 확정할지 (기본 5 / 4) |
 | `--sign_conf F` | 표지판(2_class/4_class) confidence 임계값 (OCR 검증과 함께 쓰므로 낮게, 기본 0.35) |
 | `--no_approach` | 접근 추세(거리가 줄어드는 중인지) 확인 조건 끄기 |
-| `--route NAME...` | 동선 순서 고정, 예: `front_door 4_class 2_class rear_door` |
+| `--route NAME...` | 동선 순서 고정, 예: `front_door 4_class 2_class rear_door` (`--nav`와 함께 쓰지 않음) |
 | `--near_m` / `--f_norm` / `--conf` | 근접 판정 거리(m), 거리 추정 보정 계수, 기본 confidence |
 | `--device` | `cuda`/`cpu` 등 강제 지정 (기본 자동 감지) |
 | `--save` | 오버레이 결과를 mp4로 저장 |
 | `--tts` | pyttsx3로 음성 안내 (`pip install pyttsx3` 필요) |
 | `--ocr` | 근접 시 표지판 글자 OCR 검증 (`pip install easyocr` 필요) |
+| `--nav` | 시나리오 내비게이션 (로고→벽→4강의실→3강의실→2강의실→뒷문, 좌/우/직진 방향 안내). `--route`보다 우선하며 `--merge_signs`를 자동으로 켬 |
+| `--wall_m` | `--nav` 전용: 로고 벽에 도달했다고 볼 거리(m), 기본 1.2 |
 | `--merge_signs` | 2_class/4_class를 하나로 합쳐 투표하고 숫자는 OCR로만 구분 (`--ocr` 필요) |
 | `--font PATH` | 한글 표시용 폰트 경로 (기본 맑은 고딕) |
 

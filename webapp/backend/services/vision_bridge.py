@@ -49,7 +49,12 @@ from classroom_locator.pipeline.grid_tracker import (  # noqa: E402
 )
 from classroom_locator.utils.image_utils import put_korean_text  # noqa: E402
 
-DEFAULT_WEIGHTS = _PROJECT_ROOT / "models" / "yolo" / "final_best.pt"
+# 2모델 구성(2026-09-18, seojiwoo/core 최종 방식): landmark_best.pt(표지판·문,
+# 5클래스) + logo_best.pt(로고 전용). 6클래스로 합쳐 재학습하면 표지판 원거리
+# 탐지가 무너지는 문제가 있어 분리함 (seojiwoo/README.md "자주 막히는 곳" 참고,
+# configs/default.yaml 상단 주석과 동일한 근거).
+DEFAULT_WEIGHTS = _PROJECT_ROOT / "models" / "yolo" / "landmark_best.pt"
+DEFAULT_LOGO_WEIGHTS = _PROJECT_ROOT / "models" / "yolo" / "logo_best.pt"
 LOCATIONS_FILE = _PROJECT_ROOT / "configs" / "locations.yaml"
 
 
@@ -162,6 +167,7 @@ class LandmarkVisionEngine:
             self.grid,
             self.locations,
             weights=str(DEFAULT_WEIGHTS),
+            logo_weights=str(DEFAULT_LOGO_WEIGHTS),
         )
 
     @property
@@ -175,6 +181,7 @@ class LandmarkVisionEngine:
                 self.grid,
                 self.locations,
                 weights=str(DEFAULT_WEIGHTS),
+                logo_weights=str(DEFAULT_LOGO_WEIGHTS),
                 window=1,
                 min_votes=1,
                 approach_only=False,
@@ -190,6 +197,7 @@ class LandmarkVisionEngine:
                 self.grid,
                 self.locations,
                 weights=str(DEFAULT_WEIGHTS),
+                logo_weights=str(DEFAULT_LOGO_WEIGHTS),
             )
         return self._video_tracker
 
