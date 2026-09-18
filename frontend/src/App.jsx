@@ -9,6 +9,7 @@ const INITIAL_GRID_POSITION = {
     { key: 'room2', label: '2강의실', grid_cell: [14, 0] },
     { key: 'front_door', label: '앞문', grid_cell: [0, 4] },
     { key: 'rear_door', label: '뒷문', grid_cell: [14, 4] },
+    { key: 'logo', label: '로고', grid_cell: [0, 0] },
   ],
 }
 
@@ -22,10 +23,10 @@ function GridMap({ position }) {
   })
   return (
     <section className="position-grid" aria-label="현재 위치 격자 지도">
-      <div className="position-grid-heading">
+      {/* <div className="position-grid-heading">
         <span>현재 위치 지도</span>
         <b>{mapPosition.label}</b>
-      </div>
+      </div> */}
       <div
         className="grid-map"
         style={{ '--grid-cols': grid.cols, '--grid-rows': grid.rows }}
@@ -39,11 +40,11 @@ function GridMap({ position }) {
         {mapPosition.current_cell && (
           <div className="grid-current" style={pointStyle(mapPosition.current_cell)}>
             <i />
-            <span>현재</span>
+            {/* <span>현재</span> */}
           </div>
         )}
       </div>
-      {mapPosition.current_cell && <small>격자 좌표 · ({mapPosition.current_cell[0]}, {mapPosition.current_cell[1]})</small>}
+      {/* {mapPosition.current_cell} */}
     </section>
   )
 }
@@ -59,31 +60,15 @@ function LivePanel({ cue, analyzing, playbackTime, processingMs, camera = false 
     <div className="live-caption" aria-live="polite">
       <div className="live-location-row">
         <span>위치</span>
-        <b>{cue?.location?.label || '재생 대기'}</b>
+        <b>{cue?.position?.label || '재생 대기'}</b>
       </div>
-
-      {cue?.landmarks?.length > 0 ? (
-        <div className="live-landmarks">
-          {cue.landmarks.map((item, index) => (
-            <div className="live-landmark" key={`${item.name}-${index}`}>
-              <span>{item.direction} · {item.name}</span>
-              <b>{item.distance_m.toFixed(1)}m</b>
-              <em className={item.state}>{item.state_text}</em>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <span className="live-empty">거리 정보 없음</span>
-      )}
+      
 
       <div className="live-detail">
-        <span>객체 {cue?.detections?.length ? cue.detections.join(' · ') : '탐지 없음'}</span>
-        {cue?.position?.description && <span>기준 위치 · {cue.position.description}</span>}
         {cue?.navigation?.target && <span>안내 단계 · {cue.navigation.target} 찾기</span>}
         {/* {cue?.location?.motion && <span>움직임 {cue.location.motion}</span>} */}
       </div>
 
-      <GridMap position={cue?.position} />
 
 
       <div className="bottom-grid">
@@ -97,13 +82,14 @@ function LivePanel({ cue, analyzing, playbackTime, processingMs, camera = false 
         </strong>
       </div>
       
+      <GridMap position={cue?.position} />
+      
 
     </div>
   )
 }
 
 export default function App() {
-  const inputRef = useRef(null)
   const videoInputRef = useRef(null)
   const liveVideoRef = useRef(null)
   const cameraStreamRef = useRef(null)
@@ -115,11 +101,9 @@ export default function App() {
   const lastSpokenKeyRef = useRef('')
   const lastSpokenAtRef = useRef(0)
   const [file, setFile] = useState(null)
-  const [mediaType, setMediaType] = useState('image')
+  const [mediaType, setMediaType] = useState('video')
   const [preview, setPreview] = useState('')
-  const [result, setResult] = useState(null)
   const [server, setServer] = useState(null)
-  const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [playbackTime, setPlaybackTime] = useState(0)
   const [liveCue, setLiveCue] = useState(null)
@@ -238,7 +222,6 @@ export default function App() {
       setFile(null)
       setPreview('')
       setMediaType('camera')
-      setResult(null)
       setPlaybackTime(0)
       setLiveCue(null)
       setLiveProcessingMs(0)
@@ -260,12 +243,15 @@ export default function App() {
   const selectFile = (event) => {
     const next = event.target.files?.[0]
     if (!next) return
+    if (!next.type.startsWith('video/')) {
+      setError('영상 파일만 업로드할 수 있습니다.')
+      return
+    }
     stopCamera()
     if (preview) URL.revokeObjectURL(preview)
     setFile(next)
-    setMediaType(next.type.startsWith('video/') ? 'video' : 'image')
+    setMediaType('video')
     setPreview(URL.createObjectURL(next))
-    setResult(null)
     setPlaybackTime(0)
     setLiveCue(null)
     setLiveProcessingMs(0)
@@ -328,34 +314,12 @@ export default function App() {
     liveTimerRef.current = window.setInterval(() => analyzePlayingFrame(video), 200)
   }
 
-  const analyze = async () => {
-    if (!file) return
-    setLoading(true)
-    setError('')
-    try {
-      const body = new FormData()
-      body.append(mediaType === 'video' ? 'video' : 'image', file)
-      if (mediaType === 'video') body.append('frame_step', '5')
-      const endpoint = mediaType === 'video' ? '/api/analyze-video' : '/api/analyze'
-      const response = await fetch(endpoint, { method: 'POST', body })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.error || '분석 요청에 실패했습니다.')
-      setResult(data)
-      setPlaybackTime(0)
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setLoading(false)
-    }
-  }
-
   const reset = () => {
     stopCamera()
     if (preview) URL.revokeObjectURL(preview)
     setFile(null)
-    setMediaType('image')
+    setMediaType('video')
     setPreview('')
-    setResult(null)
     setError('')
     setPlaybackTime(0)
     setLiveCue(null)
@@ -366,17 +330,10 @@ export default function App() {
     displayedSequenceRef.current = 0
     streamTokenRef.current += 1
     if (liveTimerRef.current) window.clearInterval(liveTimerRef.current)
-    if (inputRef.current) inputRef.current.value = ''
     if (videoInputRef.current) videoInputRef.current.value = ''
   }
 
-  const location = result?.location
   const serverReady = server?.model_ready
-  const timeline = result?.timeline || []
-  const activeCue = timeline.reduce(
-    (current, cue) => cue.time_seconds <= playbackTime + 0.05 ? cue : current,
-    timeline[0] || null,
-  )
 
   return (
     <main className={`app-shell ${cameraActive ? 'camera-running' : ''}`}>
@@ -390,30 +347,37 @@ export default function App() {
           <span className={`server-dot ${serverReady ? 'ready' : ''}`} />
           {server === null ? '서버 확인 중' : serverReady ? `서버 준비 완료` : '서버 준비 안 됨'}
         </div>
-        <h1>현재 위치 확인</h1>
+        <h1>Rapa Navi</h1>
+
         {/* <p>휴대폰 영상에서 객체를 탐지하고 거리와 현재 위치를 추정합니다.</p> */}
-        <button
-          type="button"
-          className={`voice-toggle ${voiceEnabled ? 'on' : ''}`}
-          aria-pressed={voiceEnabled}
-          disabled={!speechSupported}
-          onClick={toggleVoice}
-        >
-          <span aria-hidden="true">{voiceEnabled ? '🔊' : '🔇'}</span>
-          {speechSupported ? `음성 안내 ${voiceEnabled ? '켜짐' : '꺼짐'}` : '음성 안내 미지원'}
-        </button>
+        <div className='div-button'>
+
+        
+            {(cameraActive || preview) && (
+              <button
+                type="button"
+                className="change-button voice-toggle"
+                onClick={cameraActive ? stopCamera : startCamera}
+              >
+                {cameraActive ? '카메라 종료' : '실시간 카메라로 전환'}
+              </button>
+            )}
+              
+          <button
+            type="button"
+            className={`voice-toggle ${voiceEnabled ? 'on' : ''}`}
+            aria-pressed={voiceEnabled}
+            disabled={!speechSupported}
+            onClick={toggleVoice}
+          >
+            <span aria-hidden="true">{voiceEnabled ? '🔊' : '🔇'}</span>
+            {speechSupported ? `음성 안내 ${voiceEnabled ? '켜짐' : '꺼짐'}` : '음성 안내 미지원'}
+          </button>
+
+        </div>
       </header>
 
       <section className={`capture-card ${cameraActive ? 'live-camera-card' : ''} ${cameraActive || (preview && mediaType === 'video') ? 'live-media-card' : ''} ${!preview && !cameraActive ? 'is-empty' : ''}`}>
-        <input
-          ref={inputRef}
-          id="camera"
-          className="hidden-input"
-          type="file"
-          accept="image/*"
-          capture="environment"
-          onChange={selectFile}
-        />
         <input
           ref={videoInputRef}
           id="video-upload"
@@ -466,11 +430,8 @@ export default function App() {
                     if (!event.currentTarget.paused) analyzePlayingFrame(event.currentTarget)
                   }}
                 />
-              : <img src={preview} alt="분석할 사진 미리보기" />}
+              : null}
             {cameraActive && <span className="camera-live-badge">LIVE · 5 FPS 분석</span>}
-            <button className="change-button" onClick={() => cameraActive ? stopCamera() : (mediaType === 'video' ? videoInputRef : inputRef).current?.click()}>
-              {cameraActive ? '카메라 종료' : `다른 ${mediaType === 'video' ? '영상' : '사진'}`}
-            </button>
           </div>
         )}
 
@@ -494,11 +455,6 @@ export default function App() {
         {error && <p className="error">{error}</p>}
         <div className="actions">
           {file && <button className="secondary" onClick={reset}>초기화</button>}
-          {mediaType === 'image' && (
-            <button className="primary" disabled={!file || loading || (server && !serverReady)} onClick={analyze}>
-              {loading ? '서버에서 분석 중…' : '사진 분석하기'}
-            </button>
-          )}
           {mediaType === 'video' && file && (
             <div className="auto-analysis-note">▶ 재생하면 현재 화면을 자동 분석합니다</div>
           )}
@@ -507,61 +463,6 @@ export default function App() {
           )}
         </div>
       </section>
-
-      {result && (
-        <section className="result-card">
-          <div className="result-heading">
-            <div><span className="status-dot" /> 분석 완료</div>
-            <small>{(result.processing_ms / 1000).toFixed(1)}초</small>
-          </div>
-
-          {result.annotated_video_url && (
-            <div className="playback-section">
-              <video
-                src={result.annotated_video_url}
-                controls
-                playsInline
-                preload="metadata"
-                onTimeUpdate={(event) => setPlaybackTime(event.currentTarget.currentTime)}
-                onSeeked={(event) => setPlaybackTime(event.currentTarget.currentTime)}
-              />
-              <LivePanel cue={activeCue} analyzing={false} playbackTime={playbackTime} processingMs={0} />
-            </div>
-          )}
-
-          {result.annotated_image_url && (
-            <div className="playback-section image-result">
-              <img src={result.annotated_image_url} alt="서버 분석 결과" />
-            </div>
-          )}
-
-          <div className="location-box">
-            <span>현재 위치</span>
-            <strong>{location?.label || '위치 불확실'}</strong>
-            <p>{location?.detail}</p>
-          </div>
-
-          {location?.candidates?.length > 0 && (
-            <div className="candidate-list">
-              {location.candidates.slice(0, 3).map((item) => (
-                <div className="candidate" key={item.name}>
-                  <span>{item.name}</span>
-                  <b>{Math.round(item.score * 100)}%</b>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <h2>객체 탐지</h2>
-          {result.detections.length ? result.detections.map((item, index) => (
-            <div className="result-row" key={`${item.label}-${index}`}>
-              <span>{item.label}</span>
-              <b>{Math.round(item.confidence * 100)}%</b>
-            </div>
-          )) : <p className="empty">유효한 객체가 없습니다.</p>}
-
-        </section>
-      )}
 
       <footer>모델은 PC 서버에서만 실행됩니다 · 휴대폰에는 설치되지 않습니다</footer>
     </main>
